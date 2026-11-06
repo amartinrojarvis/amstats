@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0",
+  "architecture": "arm64",
+  "minimum_macos": "13.0",
+  "executable_bytes": 403568,
+  "sha256": "f257d5264f177f7ec64a31a403a050c3254421d6071a0aac30622695e7a259f0",
+  "menu_bar_width_all_indicators_pt": 212,
+  "tests_passed": 10
+}

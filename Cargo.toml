@@ -1,0 +1,19 @@
+[package]
+name = "amstats"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Monitor nativo y ligero para la barra de menús de Apple Silicon"
+license = "MIT"
+
+[dependencies]
+libc = "0.2"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSGeometry", "NSRange", "objc2-core-foundation"] }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

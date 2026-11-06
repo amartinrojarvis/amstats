@@ -6,7 +6,7 @@ La barra reúne los seis indicadores en **un único bloque de 212 pt**, con sepa
 
 ## Abrir e instalar
 
-Descarga la aplicación ARM64 y su checksum en [Releases](https://github.com/amartinrojarvis/amstats/releases/tag/v0.1.0). El repositorio y sus descargas son privados. El ZIP contiene `AMStats.app`. Si compilas localmente, se genera en `dist/AMStats.app`; los binarios no se guardan en Git.
+Descarga la aplicación ARM64 y su checksum en [Releases](https://github.com/amartinrojarvis/amstats/releases/latest). El repositorio y sus descargas son públicos. El ZIP contiene `AMStats.app`. Si compilas localmente, se genera en `dist/AMStats.app`; los binarios no se guardan en Git.
 
 Para instalarla, cópiala a `~/Applications` o `/Applications` **antes** de activar el inicio automático. No necesita permisos de administrador para medir.
 
@@ -28,10 +28,19 @@ La compilación genera una app ARM64 con firma local ad hoc. La distribución a 
 - **↓ / ↑:** descarga y subida. En la barra, `K`, `M` y `G` equivalen a KB/s, MB/s y GB/s decimales. El panel muestra las unidades completas.
 - **Batería:** porcentaje y tiempo disponible; `↗` indica tiempo hasta completar la carga y `↘`, autonomía. `AC` indica alimentación externa. El panel distingue carga completa, carga en pausa y estimación todavía no disponible.
 - **Ajustes:** activar indicadores, seleccionar 1/2/5 segundos, reducir frecuencia en batería e iniciar sesión automáticamente. La vista previa reproduce la barra real.
-- **Atajos con la app activa:** `⌘,` ajustes, `⌘R` resumen y `⌘Q` salir.
+- **Acerca de:** versión instalada, Alberto Martín, enlaces a [X](https://x.com/amartinro) e [Instagram](https://www.instagram.com/amartinro/) (@amartinro), y controles de actualización.
+- **Atajos con la app activa:** `⌘,` ajustes, `⌘R` resumen, `⌘U` buscar actualizaciones y `⌘Q` salir.
 - Al desactivar todos los indicadores permanece un pequeño acceso **AM** para volver a los ajustes.
 
 Las preferencias se guardan con `NSUserDefaults`, dominio `dev.amartin.amstats`. El inicio automático se consulta y modifica a través de `SMAppService`; si macOS requiere aprobación se muestra su estado y un acceso a Ítems de inicio. No se activa por defecto.
+
+## Actualizaciones desde la app
+
+Desde **0.2.0**, abre **Acerca de → Buscar actualizaciones…**. Sparkle compara la versión instalada con la última release estable, muestra las novedades, verifica la firma y permite instalar y reiniciar la app. La comprobación automática está activada cada 24 horas; puedes desactivarla. La descarga e instalación automáticas son opcionales y están desactivadas inicialmente.
+
+El feed y los ZIP usan HTTPS y firmas Ed25519. La clave privada permanece en el Llavero del mantenedor. No se envía el perfil del sistema a Sparkle. La firma de actualización no sustituye la notarización de Apple: los paquetes actuales usan firma ad hoc. Instala la app en una carpeta de Aplicaciones con permisos de escritura; macOS puede solicitar autorización para sustituirla.
+
+**Si tienes 0.1.0**, instala 0.2.0 manualmente una vez: aquella versión todavía no incluía actualizador. Las siguientes versiones se podrán instalar desde AMStats.
 
 ## Por qué consume poco
 
@@ -41,8 +50,8 @@ Las preferencias se guardan con `NSUserDefaults`, dominio `dev.amartin.amstats`.
 - Los paneles se construyen al abrirlos y solo actualizan sus vistas cuando están visibles.
 - Disco y batería cada 30 segundos; cambios de alimentación también por notificaciones. El modo de ahorro duplica el intervalo al funcionar con batería.
 - Sin muestreo periódico con todos los indicadores apagados. Pausa durante reposo del sistema o de las pantallas; reinicia las bases de CPU/red al despertar para evitar picos falsos.
-- Sin historial persistente, telemetría, tráfico propio ni actualizador residente. Contadores, buffers y conexiones a servicios se reutilizan; los recursos nativos se liberan con RAII.
-- Binario de aproximadamente **404 KB** y aplicación de aproximadamente **496 KiB**, incluido el icono; pueden variar según compilador.
+- Sin historial persistente ni telemetría. Sparkle consulta el feed de GitHub una vez al día si la búsqueda automática está activada, y descarga las actualizaciones cuando corresponde. Contadores, buffers y conexiones a servicios se reutilizan; los recursos nativos se liberan con RAII.
+- El ejecutable de métricas sigue siendo Rust nativo. Desde 0.2.0, la app incluye Sparkle y sus auxiliares de instalación; las cifras de tamaño y memoria de 0.1.0 no representan esta versión.
 
 Si está activado el ahorro en batería, se consulta alimentación aunque su indicador esté oculto: es necesaria para elegir la frecuencia. Las notificaciones de alimentación pueden adelantar una lectura.
 
@@ -85,10 +94,14 @@ Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para preparar el entorno y [CHANGELO
 | `src/platform.rs` | Frontera FFI, RAII y lecturas nativas |
 | `src/metrics.rs` | Cálculos, planificación, pausa, worker y diagnóstico |
 | `src/config.rs` | Preferencias y política de muestreo |
+| `src/updates.rs` | Integración nativa con Sparkle |
+| `scripts/release.sh` | Preparación y firma de versiones estables |
 | `src/ui.rs` | AppKit, barra compacta, paneles y ServiceManagement |
 | `scripts/bundle.sh` | Empaquetado y firma |
 | `scripts/benchmark.py` | Medición externa reproducible |
 
 Referencia de producto: [Stats de exelban](https://github.com/exelban/stats). Implementación independiente del conjunto de métricas solicitado. Se consultaron sus [lecturas de RAM](https://github.com/exelban/stats/blob/master/Modules/RAM/readers.swift), [GPU](https://github.com/exelban/stats/blob/master/Modules/GPU/reader.swift) y [batería](https://github.com/exelban/stats/blob/master/Modules/Battery/readers.swift), además del SDK local de Apple y la [documentación de objc2](https://docs.rs/objc2/latest/objc2/).
 
-Licencia MIT.
+Creado por **Alberto Martín** · [X: @amartinro](https://x.com/amartinro) · [Instagram: @amartinro](https://www.instagram.com/amartinro/).
+
+Licencia MIT. Sparkle incluye su licencia en `AMStats.app/Contents/Resources/Sparkle-LICENSE.txt`.

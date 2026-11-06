@@ -5,8 +5,9 @@
 <key>CFBundleDisplayName</key><string>AMStats</string>
 <key>CFBundleExecutable</key><string>amstats</string>
 <key>CFBundleIdentifier</key><string>dev.amartin.amstats</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<!-- scripts/bundle.sh injects both versions from Cargo.toml. -->
+<key>CFBundleVersion</key><string>0.2.0</string>
+<key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -15,5 +16,14 @@
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>CFBundleDevelopmentRegion</key><string>es</string>
-<key>NSHumanReadableCopyright</key><string>Copyright © 2026 AMStats. MIT.</string>
+<key>NSHumanReadableCopyright</key><string>Copyright © 2026 Alberto Martín. MIT.</string>
+<key>SUFeedURL</key><string>https://github.com/amartinrojarvis/amstats/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>1/MDLuinqwW+QEz6al5Kwj5kIxyPF082DNeGhMoOd/A=</string>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUScheduledCheckInterval</key><integer>86400</integer>
+<key>SUAllowsAutomaticUpdates</key><true/>
+<key>SUAutomaticallyUpdate</key><false/>
+<key>SUSendProfileInfo</key><false/>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SURequireSignedFeed</key><true/>
 </dict></plist>

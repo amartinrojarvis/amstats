@@ -5,6 +5,7 @@ mod config;
 mod metrics;
 mod platform;
 mod ui;
+mod updates;
 
 fn main() {
     if std::env::args().any(|arg| arg == "--diagnose") {

@@ -1,5 +1,13 @@
 # Historial de cambios
 
+## 0.2.0 — 2026-11-06
+
+- Comprobación diaria de nuevas versiones con Sparkle 2.10.1, búsqueda manual e instalación desde la app.
+- Instalación automática opcional; preferencias persistentes y verificación Ed25519 del feed y del archivo antes de extraerlo.
+- Acerca de con versión, autoría de Alberto Martín y enlaces a X e Instagram (@amartinro), además del repositorio.
+- Versiones del ejecutable y del bundle sincronizadas desde Cargo.toml; scripts para preparar releases firmadas.
+- Repositorio y descargas públicos. La versión 0.1.0 necesita una primera instalación manual de 0.2.0.
+
 ## 0.1.0 — 2026-11-06
 
 Primera versión de AMStats para macOS 13+ en Apple Silicon.

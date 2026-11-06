@@ -53,6 +53,10 @@ struct App {
     footer: Obj,
     settings: Option<Retained<AnyObject>>,
     summary: Option<Summary>,
+    about: Option<Retained<AnyObject>>,
+    updater: Result<crate::updates::Updater, String>,
+    update_checks: Obj,
+    update_install: Obj,
     switches: Vec<Obj>,
     interval: Obj,
     saver: Obj,
@@ -355,6 +359,15 @@ unsafe fn make_popover(target: Obj) -> (Retained<AnyObject>, Vec<Row>, Obj) {
             0,
             false,
         );
+        button(
+            root,
+            rect(127., 44., 134., 30.),
+            "Acerca de…",
+            target,
+            sel!(about:),
+            0,
+            false,
+        );
         let footer = label(
             root,
             rect(23., 17., 323., 22.),
@@ -436,7 +449,7 @@ unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
         label(
             root,
             rect(28., 263., 404., 20.),
-            "ACTUALIZACIÓN",
+            "FRECUENCIA DE MUESTREO",
             10.,
             true,
             true,
@@ -567,6 +580,10 @@ impl App {
                 footer: ptr::null_mut(),
                 settings: None,
                 summary: None,
+                about: None,
+                updater: crate::updates::Updater::new(),
+                update_checks: ptr::null_mut(),
+                update_install: ptr::null_mut(),
                 switches: Vec::new(),
                 interval: ptr::null_mut(),
                 saver: ptr::null_mut(),
@@ -651,6 +668,160 @@ impl App {
             let app: Obj = msg_send![class!(NSApplication), sharedApplication];
             let _: () = msg_send![app, activateIgnoringOtherApps: true];
             let _: () = msg_send![&**self.settings.as_ref().unwrap(), makeKeyAndOrderFront: ptr::null::<AnyObject>()];
+        }
+    }
+    fn show_about(&mut self) {
+        unsafe {
+            if let Some(popover) = &self.popover {
+                let _: () = msg_send![&**popover, close];
+            }
+            if self.about.is_none() {
+                let window: Allocated<AnyObject> = msg_send![class!(NSWindow), alloc];
+                let window: Retained<AnyObject> = msg_send![window, initWithContentRect: rect(0.,0.,460.,420.), styleMask: 3usize, backing: 2usize, defer: false];
+                let _: () =
+                    msg_send![&*window, setTitle: &*NSString::from_str("Acerca de AMStats")];
+                let _: () = msg_send![&*window, setReleasedWhenClosed: false];
+                let _: () = msg_send![&*window, center];
+                let root: Obj = msg_send![&*window, contentView];
+                let target = Retained::as_ptr(&self.target) as Obj;
+                label(
+                    root,
+                    rect(28., 363., 404., 32.),
+                    "AMStats",
+                    26.,
+                    true,
+                    false,
+                );
+                label(
+                    root,
+                    rect(28., 336., 404., 22.),
+                    &format!(
+                        "Versión {} · macOS · Apple Silicon",
+                        crate::updates::VERSION
+                    ),
+                    12.,
+                    false,
+                    true,
+                );
+                label(
+                    root,
+                    rect(28., 296., 404., 24.),
+                    "Creado por Alberto Martín",
+                    17.,
+                    true,
+                    false,
+                );
+                button(
+                    root,
+                    rect(24., 253., 198., 30.),
+                    "X · @amartinro",
+                    target,
+                    sel!(openLink:),
+                    0,
+                    false,
+                );
+                button(
+                    root,
+                    rect(234., 253., 202., 30.),
+                    "Instagram · @amartinro",
+                    target,
+                    sel!(openLink:),
+                    1,
+                    false,
+                );
+                button(
+                    root,
+                    rect(24., 214., 412., 30.),
+                    "Código fuente y novedades en GitHub",
+                    target,
+                    sel!(openLink:),
+                    2,
+                    false,
+                );
+                label(
+                    root,
+                    rect(28., 174., 404., 20.),
+                    "ACTUALIZACIONES",
+                    10.,
+                    true,
+                    true,
+                );
+                self.update_checks = button(
+                    root,
+                    rect(24., 139., 412., 28.),
+                    "Buscar versiones nuevas automáticamente",
+                    target,
+                    sel!(updatePreference:),
+                    0,
+                    true,
+                );
+                self.update_install = button(
+                    root,
+                    rect(24., 106., 412., 28.),
+                    "Descargar e instalar actualizaciones automáticamente",
+                    target,
+                    sel!(updatePreference:),
+                    1,
+                    true,
+                );
+                button(
+                    root,
+                    rect(24., 61., 412., 32.),
+                    "Buscar actualizaciones…",
+                    target,
+                    sel!(checkUpdates:),
+                    0,
+                    false,
+                );
+                label(
+                    root,
+                    rect(28., 17., 404., 28.),
+                    "© 2026 Alberto Martín · MIT · Actualizaciones con Sparkle",
+                    10.,
+                    false,
+                    true,
+                );
+                self.about = Some(window);
+            }
+            self.refresh_update_preferences();
+            let app: Obj = msg_send![class!(NSApplication), sharedApplication];
+            let _: () = msg_send![app, activateIgnoringOtherApps: true];
+            let _: () = msg_send![&**self.about.as_ref().unwrap(), makeKeyAndOrderFront: ptr::null::<AnyObject>()];
+        }
+    }
+    fn refresh_update_preferences(&self) {
+        if self.about.is_none() {
+            return;
+        }
+        unsafe {
+            let (checks, install) = self
+                .updater
+                .as_ref()
+                .map(|u| u.preferences())
+                .unwrap_or_default();
+            let _: () = msg_send![self.update_checks, setState: isize::from(checks)];
+            let _: () = msg_send![self.update_checks, setEnabled: self.updater.is_ok()];
+            let _: () = msg_send![self.update_install, setState: isize::from(install)];
+            let _: () = msg_send![self.update_install, setEnabled: self.updater.is_ok() && checks];
+        }
+    }
+    fn check_updates(&self) {
+        unsafe {
+            if let Some(popover) = &self.popover {
+                let _: () = msg_send![&**popover, close];
+            }
+            let app: Obj = msg_send![class!(NSApplication), sharedApplication];
+            let _: () = msg_send![app, activateIgnoringOtherApps: true];
+            match &self.updater {
+                Ok(updater) => updater.check(),
+                Err(message) => {
+                    let alert: Retained<AnyObject> = msg_send![class!(NSAlert), new];
+                    let _: () = msg_send![&*alert, setMessageText: &*NSString::from_str("Actualizador no disponible")];
+                    let _: () =
+                        msg_send![&*alert, setInformativeText: &*NSString::from_str(message)];
+                    let _: isize = msg_send![&*alert, runModal];
+                }
+            }
         }
     }
     fn refresh(&mut self) {
@@ -931,6 +1102,44 @@ extern "C-unwind" fn summary(_: *mut AnyObject, _: Sel, _: Obj) {
 extern "C-unwind" fn settings(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| a.show_settings());
 }
+extern "C-unwind" fn about(_: *mut AnyObject, _: Sel, _: Obj) {
+    with_app(|a| a.show_about());
+}
+extern "C-unwind" fn check_updates(_: *mut AnyObject, _: Sel, _: Obj) {
+    with_app(|a| a.check_updates());
+}
+extern "C-unwind" fn did_launch(_: *mut AnyObject, _: Sel, _: Obj) {
+    with_app(|a| unsafe {
+        if let Ok(updater) = &a.updater {
+            if let Err(error) = updater.start() {
+                a.updater = Err(error);
+            }
+        }
+    });
+}
+extern "C-unwind" fn update_preference(_: *mut AnyObject, _: Sel, sender: Obj) {
+    with_app(|a| unsafe {
+        if let Ok(updater) = &a.updater {
+            let tag: isize = msg_send![sender, tag];
+            let state: isize = msg_send![sender, state];
+            updater.set_preference(tag == 1, state == 1);
+        }
+        a.refresh_update_preferences();
+    });
+}
+extern "C-unwind" fn open_link(_: *mut AnyObject, _: Sel, sender: Obj) {
+    unsafe {
+        let tag: isize = msg_send![sender, tag];
+        let address = match tag {
+            0 => "https://x.com/amartinro",
+            1 => "https://www.instagram.com/amartinro/",
+            _ => crate::updates::REPOSITORY,
+        };
+        let url: Obj = msg_send![class!(NSURL), URLWithString: &*NSString::from_str(address)];
+        let workspace: Obj = msg_send![class!(NSWorkspace), sharedWorkspace];
+        let _: bool = msg_send![workspace, openURL: url];
+    }
+}
 extern "C-unwind" fn quit(_: *mut AnyObject, _: Sel, _: Obj) {
     unsafe {
         let app: Obj = msg_send![class!(NSApplication), sharedApplication];
@@ -982,6 +1191,8 @@ unsafe fn make_menu(app: &AnyObject, target: &AnyObject) {
         let item: Retained<AnyObject> = msg_send![class!(NSMenuItem), new];
         let submenu: Retained<AnyObject> = msg_send![class!(NSMenu), new];
         for (title, selector, key) in [
+            ("Acerca de AMStats…", sel!(about:), ""),
+            ("Buscar actualizaciones…", sel!(checkUpdates:), "u"),
             ("Resumen", sel!(summary:), "r"),
             ("Ajustes…", sel!(settings:), ","),
             ("Salir de AMStats", sel!(quit:), "q"),
@@ -1017,6 +1228,11 @@ pub fn run() {
             (sel!(toggle:), toggle),
             (sel!(summary:), summary),
             (sel!(settings:), settings),
+            (sel!(about:), about),
+            (sel!(checkUpdates:), check_updates),
+            (sel!(openLink:), open_link),
+            (sel!(updatePreference:), update_preference),
+            (sel!(applicationDidFinishLaunching:), did_launch),
             (sel!(change:), change),
             (sel!(quit:), quit),
             (sel!(loginSettings:), login_settings),

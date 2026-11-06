@@ -1,0 +1,14 @@
+{
+  "pid": 18492,
+  "macos": "27.2",
+  "architecture": "arm64",
+  "seconds": 30.0,
+  "cpu_percent_one_core": 0.0306,
+  "physical_footprint_mib": 46.91,
+  "peak_physical_footprint_mib": 47.05,
+  "rss_mib": 122.08,
+  "peak_rss_mib": 122.11,
+  "idle_wakeups_per_second": 0.133,
+  "disk_bytes_read": 0,
+  "disk_bytes_written": 0
+}

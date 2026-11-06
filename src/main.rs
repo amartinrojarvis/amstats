@@ -4,11 +4,14 @@ compile_error!("AMStats requiere macOS 13 o posterior en Apple Silicon.");
 mod config;
 mod metrics;
 mod platform;
+mod processes;
 mod ui;
 mod updates;
 
 fn main() {
-    if std::env::args().any(|arg| arg == "--diagnose") {
+    if std::env::args().any(|arg| arg == "--diagnose-detail") {
+        processes::diagnose();
+    } else if std::env::args().any(|arg| arg == "--diagnose") {
         metrics::diagnose();
     } else {
         ui::run();

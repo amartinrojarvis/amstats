@@ -25,11 +25,14 @@ La compilación genera una app ARM64 con firma local ad hoc. La distribución a 
 ## Uso
 
 - **CPU / RAM / GPU / SSD:** porcentaje de utilización. SSD expresa espacio ocupado, no actividad de entrada/salida.
-- **↓ / ↑:** descarga y subida. En la barra, `K`, `M` y `G` equivalen a KB/s, MB/s y GB/s decimales. El panel muestra las unidades completas.
+- **↑ / ↓:** subida en la línea superior y descarga en la inferior. En la barra, `K`, `M` y `G` equivalen a KB/s, MB/s y GB/s decimales. El panel muestra las unidades completas.
 - **Batería:** porcentaje y tiempo disponible; `↗` indica tiempo hasta completar la carga y `↘`, autonomía. `AC` indica alimentación externa. El panel distingue carga completa, carga en pausa y estimación todavía no disponible.
+- **Detalle contextual:** pulsa CPU, RAM, GPU, SSD, red o batería en la barra para abrir ese recurso. En red, pulsar la línea superior ordena por subida y la inferior por descarga. Gráficos LED con 60 segundos de historial; subida desde el centro hacia arriba y descarga hacia abajo, con escala compartida.
+- **Procesos:** hasta diez entradas ordenadas de mayor a menor, agrupación por aplicación, desglose de sus procesos, PID y memoria. Puedes elegir el sentido de E/S, pausar y fijar el panel como ventana. La lista mantiene el orden mientras el cursor está encima.
+- **Cargador:** potencia declarada en W, potencia de carga/descarga de batería, salud estimada, ciclos y capacidad. La potencia del adaptador no es el consumo medido en el enchufe.
 - **Ajustes:** activar indicadores, seleccionar 1/2/5 segundos, reducir frecuencia en batería e iniciar sesión automáticamente. La vista previa reproduce la barra real.
 - **Acerca de:** versión instalada, Alberto Martín, enlaces a [X](https://x.com/amartinro) e [Instagram](https://www.instagram.com/amartinro/) (@amartinro), y controles de actualización.
-- **Atajos con la app activa:** `⌘,` ajustes, `⌘R` resumen, `⌘U` buscar actualizaciones y `⌘Q` salir.
+- **Atajos con la app activa:** `⌘1` a `⌘6` detalle de cada recurso en ventana, `⌘,` ajustes, `⌘R` resumen, `⌘U` buscar actualizaciones y `⌘Q` salir.
 - Al desactivar todos los indicadores permanece un pequeño acceso **AM** para volver a los ajustes.
 
 Las preferencias se guardan con `NSUserDefaults`, dominio `dev.amartin.amstats`. El inicio automático se consulta y modifica a través de `SMAppService`; si macOS requiere aprobación se muestra su estado y un acceso a Ítems de inicio. No se activa por defecto.
@@ -44,7 +47,9 @@ El feed y los ZIP usan HTTPS y firmas Ed25519. La clave privada permanece en el 
 
 ## Por qué consume poco
 
-- Un hilo de muestreo de prioridad Utility y el hilo principal de AppKit. Sin Electron, WebView, Tokio, servidor, consultas de procesos ni ejecución periódica de comandos.
+- Un hilo de muestreo de prioridad Utility y el hilo principal de AppKit. Sin Electron, WebView, Tokio ni servidor. El detalle crea un segundo hilo Utility al abrirse por primera vez; queda dormido al cerrar o pausar el panel.
+- Los procesos se consultan solo con el detalle visible, como mínimo cada 2 segundos y respetando el intervalo y ahorro configurados. El detalle de red usa un único lector nativo `nettop`, sin DNS, que termina al cambiar de recurso, cerrar o pausar.
+- Matriz LED dibujada con tres trazados, sin animaciones, temporizadores ni vistas por punto. Historial de 60 segundos limitado a 61 muestras en RAM; no se redibuja dos veces la misma muestra.
 - CPU y RAM mediante Mach; GPU y alimentación mediante IOKit; red mediante contadores de 64 bits del kernel; espacio mediante `statfs`.
 - Un solo estado pendiente para la interfaz: las actualizaciones no se acumulan. La barra se redibuja únicamente cuando cambia el texto mostrado.
 - Los paneles se construyen al abrirlos y solo actualizan sus vistas cuando están visibles.
@@ -65,6 +70,10 @@ La GPU consulta `PerformanceStatistics` de `IOAccelerator`. Estas propiedades no
 
 Los tiempos de batería son estimaciones de macOS. Durante una transición, carga optimizada o ausencia de datos se muestra el estado correspondiente. No se extrapola un tiempo artificial. La primera lectura de CPU/red y la primera tras despertar necesitan establecer una base.
 
+El detalle usa contadores de procesos accesibles al usuario; macOS puede restringir procesos del sistema. CPU se normaliza a la capacidad completa del Mac. RAM muestra huella física; las cifras por proceso no son una partición exacta de la memoria global. GPU usa tiempo por cliente en ms/s, puede solaparse y depende de propiedades del controlador. La energía por proceso es una atribución del kernel, no un vatímetro físico. Cuando faltan datos se indica expresamente.
+
+La red por proceso mide TCP/UDP y puede incluir tráfico local o de VPN que no coincide con el total de interfaces físicas. Necesita varias lecturas al abrir el panel (aproximadamente tres intervalos).
+
 ## Verificación y rendimiento
 
 ```sh
@@ -83,6 +92,8 @@ En una medición posterior de 30 s con los seis módulos activos, AMStats usó *
 
 Las pruebas cubren diferencias y desbordamiento de CPU, reinicio y aparición de interfaces de red, unidades, estados de batería, política de ahorro, desactivación de colectores y anchura real de texto para evitar recortes incluso con 100 %. La comprobación visual incluye ajustes, resumen, activación/desactivación e inicio automático (registro y anulación).
 
+La versión 0.3.0 añade comprobaciones de agrupación, contadores, historial acotado y selección con indicadores ocultos. Las pruebas visuales y mediciones de sus paneles se documentan en [verification-0.3.0.md](docs/verification-0.3.0.md).
+
 ## Desarrollo y versiones
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para preparar el entorno y [CHANGELOG.md](CHANGELOG.md) para el historial. GitHub Actions comprueba formato, Clippy, pruebas y empaquetado ARM64 en cada cambio de `main` y cada pull request.
@@ -96,6 +107,8 @@ Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para preparar el entorno y [CHANGELO
 | `src/config.rs` | Preferencias y política de muestreo |
 | `src/updates.rs` | Integración nativa con Sparkle |
 | `scripts/release.sh` | Preparación y firma de versiones estables |
+| `src/processes.rs` | Lectores de procesos bajo demanda y agrupación |
+| `src/ui/detail.rs` | Detalle contextual y gráficos LED |
 | `src/ui.rs` | AppKit, barra compacta, paneles y ServiceManagement |
 | `scripts/bundle.sh` | Empaquetado y firma |
 | `scripts/benchmark.py` | Medición externa reproducible |

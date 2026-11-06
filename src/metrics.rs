@@ -26,6 +26,8 @@ pub struct Snapshot {
     pub disk: Option<Disk>,
     pub network: Option<Rate>,
     pub battery: Option<Battery>,
+    pub sampled_at: Option<Instant>,
+    pub network_total: Rate,
     pub sample_us: u64,
     pub interval: u64,
 }
@@ -139,6 +141,7 @@ pub struct Sampler {
     power_at: Option<Instant>,
     gpu_retry_at: Option<Instant>,
     snapshot: Snapshot,
+    network_total: Rate,
 }
 impl Sampler {
     pub fn new() -> Self {
@@ -155,6 +158,7 @@ impl Sampler {
             power_at: None,
             gpu_retry_at: None,
             snapshot: Snapshot::default(),
+            network_total: Rate::default(),
         }
     }
     pub fn reset(&mut self) {
@@ -210,6 +214,11 @@ impl Sampler {
                         start.duration_since(then).as_secs_f64(),
                     )
                 });
+                if let (Some(rate), Some(then)) = (self.snapshot.network, self.net_at) {
+                    let seconds = start.duration_since(then).as_secs_f64();
+                    self.network_total.down += rate.down * seconds;
+                    self.network_total.up += rate.up * seconds;
+                }
                 std::mem::swap(&mut self.net_previous, &mut self.net_current);
                 self.net_at = Some(start);
             } else {
@@ -230,6 +239,8 @@ impl Sampler {
         }
         self.snapshot.interval =
             config.effective_interval(self.snapshot.battery.is_some_and(|b| !b.plugged));
+        self.snapshot.sampled_at = Some(start);
+        self.snapshot.network_total = self.network_total;
         self.snapshot.sample_us = start.elapsed().as_micros() as u64;
         self.snapshot.clone()
     }
@@ -271,8 +282,10 @@ pub fn speed(value: f64) -> String {
         format!("{:.1} GB/s", value / 1_000_000_000.)
     } else if value >= 1_000_000. {
         format!("{:.1} MB/s", value / 1_000_000.)
-    } else {
+    } else if value >= 1_000. {
         format!("{:.0} KB/s", value / 1_000.)
+    } else {
+        format!("{value:.0} B/s")
     }
 }
 pub fn time(minutes: u32) -> String {
@@ -435,7 +448,7 @@ mod tests {
         assert_eq!(percent(5, 0), 0.);
         assert_eq!(percent(120, 100), 100.);
         assert_eq!(speed(1_500_000.), "1.5 MB/s");
-        assert_eq!(speed(0.), "0 KB/s");
+        assert_eq!(speed(0.), "0 B/s");
         assert_eq!(time(45), "45 min");
     }
     #[test]

@@ -24,6 +24,7 @@ use std::{
 unsafe extern "C" {}
 #[link(name = "ServiceManagement", kind = "framework")]
 unsafe extern "C" {}
+mod detail;
 type Obj = *mut AnyObject;
 thread_local! { static APP: RefCell<Option<App>> = const { RefCell::new(None) }; }
 struct Row {
@@ -39,6 +40,8 @@ struct Summary {
 struct App {
     // Join the worker before releasing the callback target.
     worker: Worker,
+    details: Option<detail::Panel>,
+    history: detail::History,
     shared: Arc<Shared>,
     config: Config,
     target: Retained<AnyObject>,
@@ -93,7 +96,7 @@ unsafe fn label(
 ) -> Obj {
     unsafe {
         let view: Retained<AnyObject> =
-            msg_send![class!(NSTextField), labelWithString: &*NSString::from_str(text)];
+            msg_send![class!(AMStatsPassiveLabel), labelWithString: &*NSString::from_str(text)];
         let font: Obj = msg_send![class!(NSFont), systemFontOfSize: size, weight: if bold { 0.23f64 } else { 0f64 }];
         let _: () = msg_send![&view, setFrame: frame];
         let _: () = msg_send![&view, setFont: font];
@@ -135,6 +138,7 @@ unsafe fn button(
 }
 #[derive(Clone, PartialEq)]
 struct BarCell {
+    metric: Option<usize>,
     top: String,
     bottom: String,
     width: f64,
@@ -190,12 +194,12 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
                 .network
                 .map(|n| {
                     (
-                        format!("↓ {}", compact_speed(n.down)),
                         format!("↑ {}", compact_speed(n.up)),
+                        format!("↓ {}", compact_speed(n.down)),
                         42.,
                     )
                 })
-                .unwrap_or(("↓ —".into(), "↑ —".into(), 42.)),
+                .unwrap_or(("↑ —".into(), "↓ —".into(), 42.)),
             5 => {
                 let top = snapshot
                     .battery
@@ -219,6 +223,7 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
             _ => (["CPU", "RAM", "GPU", "SSD"][i].into(), value, 27.),
         };
         cells.push(BarCell {
+            metric: Some(i),
             top,
             bottom,
             width,
@@ -227,6 +232,7 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
     }
     if cells.is_empty() {
         cells.push(BarCell {
+            metric: None,
             top: "AM".into(),
             bottom: "·".into(),
             width: 26.,
@@ -550,6 +556,7 @@ impl App {
             let button: Obj = msg_send![&*status, button];
             let _: () = msg_send![button, setTarget: target_ptr];
             let _: () = msg_send![button, setAction: sel!(toggle:)];
+            let _: isize = msg_send![button, sendActionOn: (1usize << 2) | (1usize << 4)];
             let _: () = msg_send![button, setAccessibilityLabel: &*NSString::from_str("AMStats · monitor del sistema")];
             let strip = make_strip(rect(0., 0., 212., 22.));
             let _: () = msg_send![button, addSubview: &*strip];
@@ -566,6 +573,8 @@ impl App {
             let worker = Worker::start(config.clone(), shared.clone(), target_ptr as usize);
             let mut app = Self {
                 worker,
+                details: None,
+                history: detail::History::default(),
                 shared,
                 config,
                 target,
@@ -622,6 +631,7 @@ impl App {
         }
     }
     fn show_summary(&mut self) {
+        self.hide_detail();
         unsafe {
             if let Some(settings) = &self.settings {
                 let _: () = msg_send![&**settings, orderOut: ptr::null::<AnyObject>()];
@@ -650,6 +660,7 @@ impl App {
         }
     }
     fn show_settings(&mut self) {
+        self.hide_detail();
         unsafe {
             if let Some(popover) = &self.popover {
                 let _: () = msg_send![&**popover, close];
@@ -671,6 +682,7 @@ impl App {
         }
     }
     fn show_about(&mut self) {
+        self.hide_detail();
         unsafe {
             if let Some(popover) = &self.popover {
                 let _: () = msg_send![&**popover, close];
@@ -827,6 +839,8 @@ impl App {
     fn refresh(&mut self) {
         self.shared.pending.store(false, Ordering::Release);
         let snapshot = self.shared.snapshot.lock().unwrap().clone();
+        self.history.push(&snapshot);
+        self.refresh_detail(&snapshot);
         unsafe {
             let cells = bar_cells(&self.config, &snapshot);
             if cells != self.cells {
@@ -1087,13 +1101,7 @@ extern "C-unwind" fn change(_: *mut AnyObject, _: Sel, sender: Obj) {
 }
 extern "C-unwind" fn toggle(_: *mut AnyObject, _: Sel, sender: Obj) {
     with_app(|a| unsafe {
-        a.prepare_dashboard();
-        let popover = a.popover.as_ref().unwrap();
-        if a.popover_shown() {
-            let _: () = msg_send![&**popover, performClose: sender];
-        } else {
-            a.show_dashboard(sender);
-        }
+        a.toggle_detail(sender);
     });
 }
 extern "C-unwind" fn summary(_: *mut AnyObject, _: Sel, _: Obj) {
@@ -1153,21 +1161,25 @@ extern "C-unwind" fn login_settings(_: *mut AnyObject, _: Sel, _: Obj) {
 }
 extern "C-unwind" fn sleep(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| {
+        a.suspend_detail(1, true);
         let _ = a.worker.tx.send(Command::Suspend(1, true));
     });
 }
 extern "C-unwind" fn wake(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| {
+        a.suspend_detail(1, false);
         let _ = a.worker.tx.send(Command::Suspend(1, false));
     });
 }
 extern "C-unwind" fn screen_sleep(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| {
+        a.suspend_detail(2, true);
         let _ = a.worker.tx.send(Command::Suspend(2, true));
     });
 }
 extern "C-unwind" fn screen_wake(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| {
+        a.suspend_detail(2, false);
         let _ = a.worker.tx.send(Command::Suspend(2, false));
     });
 }
@@ -1178,7 +1190,7 @@ extern "C" fn power_changed(_: *mut std::ffi::c_void) {
 }
 extern "C-unwind" fn reopen(_: *mut AnyObject, _: Sel, _: Obj, visible: Bool) -> Bool {
     with_app(|a| {
-        if !visible.as_bool() && !a.popover_shown() {
+        if !visible.as_bool() && !a.popover_shown() && !a.detail_visible() {
             a.show_settings();
         }
     });
@@ -1202,6 +1214,15 @@ unsafe fn make_menu(app: &AnyObject, target: &AnyObject) {
             let _: () = msg_send![&*command, setTarget: target];
             let _: () = msg_send![&*submenu, addItem: &*command];
         }
+        let separator: Obj = msg_send![class!(NSMenuItem), separatorItem];
+        let _: () = msg_send![&*submenu, addItem: separator];
+        for (i, title) in NAMES.iter().enumerate() {
+            let command: Allocated<AnyObject> = msg_send![class!(NSMenuItem), alloc];
+            let command: Retained<AnyObject> = msg_send![command, initWithTitle: &*NSString::from_str(&format!("Detalle de {title}…")), action: sel!(detailTab:), keyEquivalent: &*NSString::from_str(&(i+1).to_string())];
+            let _: () = msg_send![&*command, setTarget: target];
+            let _: () = msg_send![&*command, setTag: i as isize];
+            let _: () = msg_send![&*submenu, addItem: &*command];
+        }
         let _: () = msg_send![&*item, setSubmenu: &*submenu];
         let _: () = msg_send![&*menu, addItem: &*item];
         let _: () = msg_send![app, setMainMenu: &*menu];
@@ -1219,6 +1240,7 @@ pub fn run() {
             strip_hit_test as extern "C-unwind" fn(_, _, _) -> Obj,
         );
         strip_class.register();
+        detail::register_views();
         let mut builder = ClassBuilder::new(c"AMStatsController", class!(NSObject)).unwrap();
         for (selector, method) in [
             (
@@ -1247,6 +1269,7 @@ pub fn run() {
             sel!(applicationShouldHandleReopen:hasVisibleWindows:),
             reopen as extern "C-unwind" fn(_, _, _, _) -> Bool,
         );
+        detail::register_actions(&mut builder);
         let target: Retained<AnyObject> = msg_send![builder.register(), new];
         let _: () = msg_send![&*app, setDelegate: &*target];
         make_menu(&app, &target);

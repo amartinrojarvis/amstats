@@ -20,6 +20,11 @@ unsafe extern "C" {
     fn CFEqual(a: Cf, b: Cf) -> bool;
     fn CFArrayGetCount(array: Cf) -> isize;
     fn CFArrayGetValueAtIndex(array: Cf, index: isize) -> Cf;
+    fn CFArrayGetTypeID() -> usize;
+    fn CFStringGetTypeID() -> usize;
+    fn CFStringGetCString(value: Cf, buffer: *mut i8, size: isize, encoding: u32) -> bool;
+    fn CFDictionaryGetCount(dict: Cf) -> isize;
+    fn CFDictionaryGetKeysAndValues(dict: Cf, keys: *mut Cf, values: *mut Cf);
 }
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
@@ -30,6 +35,21 @@ unsafe extern "C" {
     fn IOPSCopyPowerSourcesInfo() -> Cf;
     fn IOPSCopyPowerSourcesList(info: Cf) -> Cf;
     fn IOPSGetPowerSourceDescription(info: Cf, source: Cf) -> Cf;
+    fn IORegistryEntryCreateIterator(
+        entry: u32,
+        plane: *const i8,
+        options: u32,
+        iterator: *mut u32,
+    ) -> i32;
+    fn IOIteratorNext(iterator: u32) -> u32;
+    fn IORegistryEntryGetRegistryEntryID(entry: u32, id: *mut u64) -> i32;
+    fn IORegistryEntryCreateCFProperties(
+        entry: u32,
+        properties: *mut Cf,
+        alloc: Cf,
+        options: u32,
+    ) -> i32;
+    fn IOPMCopyAssertionsByProcess(assertions: *mut Cf) -> i32;
 }
 
 struct OwnedCf(Cf);
@@ -450,5 +470,260 @@ impl Drop for PowerNotification {
         unsafe {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), self.0.0, kCFRunLoopCommonModes);
         }
+    }
+}
+
+// Detail-only collectors: never called by the menu-bar sampler.
+struct IoHandle(u32);
+impl Drop for IoHandle {
+    fn drop(&mut self) {
+        if self.0 != 0 {
+            unsafe {
+                IOObjectRelease(self.0);
+            }
+        }
+    }
+}
+fn registry_properties(service: u32) -> Option<OwnedCf> {
+    let mut properties = ptr::null();
+    (unsafe { IORegistryEntryCreateCFProperties(service, &mut properties, ptr::null(), 0) } == 0)
+        .then(|| OwnedCf::new(properties))
+        .flatten()
+}
+fn cf_text(value: Cf) -> Option<String> {
+    if value.is_null() || unsafe { CFGetTypeID(value) != CFStringGetTypeID() } {
+        return None;
+    }
+    let mut buffer = [0i8; 1024];
+    unsafe {
+        CFStringGetCString(
+            value,
+            buffer.as_mut_ptr(),
+            buffer.len() as isize,
+            0x08000100,
+        )
+    }
+    .then(|| {
+        unsafe { CStr::from_ptr(buffer.as_ptr()) }
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+fn field_number(dict: Cf, name: &str) -> Option<i64> {
+    number(get(dict, &NSString::from_str(name)))
+}
+
+/// Per-client GPU counters. Registry IDs prevent spikes when a Metal client exits.
+/// These driver properties are optional and not a stable public Apple API.
+pub fn gpu_clients() -> Vec<(u64, i32, u64, String)> {
+    let accelerator = IoHandle(unsafe {
+        IOServiceGetMatchingService(0, IOServiceMatching(c"IOAccelerator".as_ptr()))
+    });
+    let mut iterator = 0;
+    if accelerator.0 == 0
+        || unsafe {
+            IORegistryEntryCreateIterator(accelerator.0, c"IOService".as_ptr(), 1, &mut iterator)
+        } != 0
+    {
+        return Vec::new();
+    }
+    let iterator = IoHandle(iterator);
+    let creator = NSString::from_str("IOUserClientCreator");
+    let usage = NSString::from_str("AppUsage");
+    let time = NSString::from_str("accumulatedGPUTime");
+    let mut out = Vec::new();
+    loop {
+        let entry = IoHandle(unsafe { IOIteratorNext(iterator.0) });
+        if entry.0 == 0 {
+            break;
+        }
+        let Some(properties) = registry_properties(entry.0) else {
+            continue;
+        };
+        let Some(owner) = cf_text(get(properties.0, &creator)) else {
+            continue;
+        };
+        let Some(pid) = owner
+            .strip_prefix("pid ")
+            .and_then(|s| s.split(',').next())
+            .and_then(|s| s.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let array = get(properties.0, &usage);
+        if array.is_null() || unsafe { CFGetTypeID(array) != CFArrayGetTypeID() } {
+            continue;
+        }
+        let mut total = 0u64;
+        for index in 0..unsafe { CFArrayGetCount(array) } {
+            let item = unsafe { CFArrayGetValueAtIndex(array, index) };
+            total = total.saturating_add(number(get(item, &time)).unwrap_or(0).max(0) as u64);
+        }
+        let mut id = 0;
+        if unsafe { IORegistryEntryGetRegistryEntryID(entry.0, &mut id) } == 0 {
+            out.push((
+                id,
+                pid,
+                total,
+                owner
+                    .split_once(", ")
+                    .map_or("", |(_, name)| name)
+                    .to_string(),
+            ));
+        }
+    }
+    out
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BatteryDetails {
+    pub adapter_watts: Option<f64>,
+    pub battery_watts: Option<f64>,
+    pub cycles: Option<u64>,
+    pub capacity_mah: Option<u64>,
+    pub health: Option<f64>,
+    pub connected: bool,
+}
+pub fn battery_details() -> BatteryDetails {
+    let service = IoHandle(unsafe {
+        IOServiceGetMatchingService(0, IOServiceMatching(c"AppleSmartBattery".as_ptr()))
+    });
+    let Some(properties) = registry_properties(service.0) else {
+        return BatteryDetails::default();
+    };
+    let dict = properties.0;
+    let connected = boolean(get(dict, &NSString::from_str("ExternalConnected")));
+    let adapter = get(dict, &NSString::from_str("AdapterDetails"));
+    let battery = get(dict, &NSString::from_str("BatteryData"));
+    let capacity = field_number(battery, "AppleRawMaxCapacity").filter(|v| *v > 0);
+    let design = field_number(battery, "DesignCapacity").filter(|v| *v > 0);
+    let volts = field_number(dict, "Voltage").filter(|v| (1000..30000).contains(v));
+    let amps = field_number(dict, "InstantAmperage").or_else(|| field_number(dict, "Amperage"));
+    BatteryDetails {
+        connected,
+        adapter_watts: connected
+            .then(|| {
+                field_number(adapter, "Watts")
+                    .filter(|v| (1..1000).contains(v))
+                    .map(|v| v as f64)
+            })
+            .flatten(),
+        battery_watts: volts
+            .zip(amps)
+            .map(|(v, a)| v as f64 * a as f64 / 1e6)
+            .filter(|w| w.abs() < 500.),
+        cycles: field_number(dict, "CycleCount")
+            .filter(|v| *v >= 0)
+            .map(|v| v as u64),
+        capacity_mah: capacity.map(|v| v as u64),
+        health: capacity
+            .zip(design)
+            .map(|(c, d)| (100. * c as f64 / d as f64).clamp(0., 100.)),
+    }
+}
+
+pub fn sleep_blockers() -> Vec<i32> {
+    let mut dict = ptr::null();
+    if unsafe { IOPMCopyAssertionsByProcess(&mut dict) } != 0 {
+        return Vec::new();
+    }
+    let Some(dict) = OwnedCf::new(dict) else {
+        return Vec::new();
+    };
+    let count = unsafe { CFDictionaryGetCount(dict.0) }.max(0) as usize;
+    let mut keys = vec![ptr::null(); count];
+    let mut values = vec![ptr::null(); count];
+    unsafe {
+        CFDictionaryGetKeysAndValues(dict.0, keys.as_mut_ptr(), values.as_mut_ptr());
+    }
+    let mut out = Vec::new();
+    for (pid, assertions) in keys.into_iter().zip(values) {
+        if assertions.is_null() || unsafe { CFGetTypeID(assertions) != CFArrayGetTypeID() } {
+            continue;
+        }
+        for i in 0..unsafe { CFArrayGetCount(assertions) } {
+            let assertion = unsafe { CFArrayGetValueAtIndex(assertions, i) };
+            let kind =
+                cf_text(get(assertion, &NSString::from_str("AssertType"))).unwrap_or_default();
+            if field_number(assertion, "AssertLevel").unwrap_or(0) != 0
+                && matches!(
+                    kind.as_str(),
+                    "PreventUserIdleSystemSleep"
+                        | "PreventSystemSleep"
+                        | "PreventUserIdleDisplaySleep"
+                        | "NoIdleSleepAssertion"
+                        | "NoDisplaySleepAssertion"
+                )
+            {
+                if let Some(pid) = number(pid) {
+                    out.push(pid as i32);
+                }
+                break;
+            }
+        }
+    }
+    out
+}
+
+pub fn memory_details() -> (Option<u64>, Option<u32>) {
+    #[repr(C)]
+    #[derive(Default)]
+    struct Swap {
+        total: u64,
+        available: u64,
+        used: u64,
+        pagesize: i32,
+        encrypted: i32,
+    }
+    let mut swap = Swap::default();
+    let mut size = mem::size_of::<Swap>();
+    let valid = unsafe {
+        libc::sysctlbyname(
+            c"vm.swapusage".as_ptr(),
+            (&mut swap as *mut Swap).cast(),
+            &mut size,
+            ptr::null_mut(),
+            0,
+        )
+    } == 0;
+    let mut pressure = 0u32;
+    let mut size = mem::size_of::<u32>();
+    let has_pressure = unsafe {
+        libc::sysctlbyname(
+            c"kern.memorystatus_vm_pressure_level".as_ptr(),
+            (&mut pressure as *mut u32).cast(),
+            &mut size,
+            ptr::null_mut(),
+            0,
+        )
+    } == 0;
+    (valid.then_some(swap.used), has_pressure.then_some(pressure))
+}
+
+pub fn active_interfaces() -> String {
+    let mut addresses = ptr::null_mut();
+    if unsafe { libc::getifaddrs(&mut addresses) } != 0 {
+        return "Interfaz no disponible".into();
+    }
+    let mut names = Vec::new();
+    let mut item = addresses;
+    while !item.is_null() {
+        let address = unsafe { &*item };
+        let name = unsafe { CStr::from_ptr(address.ifa_name) }.to_string_lossy();
+        if name.starts_with("en")
+            && address.ifa_flags & libc::IFF_RUNNING as u32 != 0
+            && !names.iter().any(|n| n == &name)
+        {
+            names.push(name.into_owned());
+        }
+        item = address.ifa_next;
+    }
+    unsafe {
+        libc::freeifaddrs(addresses);
+    }
+    if names.is_empty() {
+        "Sin interfaz física activa".into()
+    } else {
+        names.join(" · ")
     }
 }

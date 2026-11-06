@@ -1,5 +1,16 @@
 # Historial de cambios
 
+## 0.3.0 — 2026-11-06
+
+- Panel contextual para cada indicador, con tarjetas, pestañas, colores por recurso y opción de fijar como ventana.
+- Gráficos de barras LED/LCD con historial local de 60 segundos. Red dividida desde el centro: subida arriba, descarga abajo, con escala común.
+- Subida en la línea superior de la barra y descarga en la inferior; cada línea selecciona su orden de procesos.
+- Procesos de mayor a menor consumo para CPU, RAM, GPU, disco, red y energía, agrupables por app y con desglose, PID y memoria.
+- Pausa de lecturas, orden estable al pasar el cursor y atajos ⌘1–⌘6.
+- Potencia declarada del cargador, carga/descarga de batería, salud estimada, ciclos y capacidad; identificación de procesos que impiden reposo.
+- Consultas de procesos solo mientras el detalle esté visible; lector de red único que termina al cerrar, pausar o cambiar de recurso. Gráficos sin animaciones ni temporizadores adicionales.
+- Dieciséis pruebas y validación de formato, Clippy y firma del bundle.
+
 ## 0.2.0 — 2026-11-06
 
 - Comprobación diaria de nuevas versiones con Sparkle 2.10.1, búsqueda manual e instalación desde la app.

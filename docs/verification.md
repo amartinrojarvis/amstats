@@ -1,4 +1,6 @@
-# Verificación local — 6 de noviembre de 2026
+# Verificación local de 0.1.0 — 6 de noviembre de 2026
+
+Las comprobaciones de 0.2.0 se documentan en [verification-0.2.0.md](verification-0.2.0.md). Las mediciones siguientes corresponden a 0.1.0.
 
 Equipo: Apple Silicon, 8 GiB de RAM, macOS 27.2. Compilación ARM64 de producción, Rust 1.99.1. Alimentación externa. Los resultados son observaciones de este equipo, no límites garantizados para otros dispositivos.
 

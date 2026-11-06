@@ -31,5 +31,5 @@ jobs:
       - name: Compilar y validar la aplicación
         run: |
           ./scripts/bundle.sh
-          lipo -verify_arch arm64 dist/AMStats.app/Contents/MacOS/amstats
+          lipo dist/AMStats.app/Contents/MacOS/amstats -verify_arch arm64
           codesign --verify --strict dist/AMStats.app

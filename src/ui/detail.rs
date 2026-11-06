@@ -510,6 +510,38 @@ impl Panel {
 }
 
 impl App {
+    unsafe fn detail_anchor(&self, kind: usize) -> Obj {
+        unsafe {
+            let index = if self.config.enabled[kind] {
+                kind
+            } else {
+                self.config
+                    .enabled
+                    .iter()
+                    .position(|&on| on)
+                    .unwrap_or(kind)
+            };
+            if self.config.any_enabled() {
+                msg_send![&*self.indicators[index].status, button]
+            } else {
+                msg_send![&*self.status, button]
+            }
+        }
+    }
+    unsafe fn detach_detail_window(&mut self) {
+        unsafe {
+            if let Some(p) = &mut self.details {
+                if let Some(window) = p.window.take() {
+                    let _: () = msg_send![&*window, orderOut: ptr::null::<AnyObject>()];
+                    let blank: Retained<AnyObject> = msg_send![class!(NSView), new];
+                    let _: () = msg_send![&*window, setContentView: &*blank];
+                    let controller: Obj = msg_send![&*p.popover, contentViewController];
+                    let _: () = msg_send![controller, setView: &*p.view];
+                    string(p.pin_button, sel!(setTitle:), "Fijar ↗");
+                }
+            }
+        }
+    }
     pub(super) fn detail_visible(&self) -> bool {
         self.details.as_ref().is_some_and(Panel::visible)
     }
@@ -571,26 +603,15 @@ impl App {
                 }
                 return;
             }
-            let point: NSPoint = msg_send![event, locationInWindow];
-            // Use the drawing view's coordinates, independent of NSStatusBarButton's
-            // flipped coordinate system, so the upper line always selects upload.
-            let local: NSPoint =
-                msg_send![&*self.strip, convertPoint: point, fromView: ptr::null::<AnyObject>()];
-            let bounds: NSRect = msg_send![&*self.strip, bounds];
-            let selected = hit_metric(&self.cells, local.x, bounds.size.width);
-            let Some(kind) = selected else {
+            let tag: isize = msg_send![anchor, tag];
+            let Some(kind) = indicator_kind(tag) else {
                 self.show_dashboard(anchor);
                 return;
             };
-            let sort = if kind == 4 {
-                if local.y >= bounds.size.height / 2. {
-                    2
-                } else {
-                    1
-                }
-            } else {
-                0
-            };
+            let sort = 0;
+            // Clicking the menu bar always opens its attached popover. A separate
+            // window is only created by the explicit Fijar button.
+            self.detach_detail_window();
             let same = self
                 .details
                 .as_ref()
@@ -627,12 +648,13 @@ impl App {
                 let _: () = msg_send![&**window, makeKeyAndOrderFront: ptr::null::<AnyObject>()];
             } else {
                 let shown: bool = msg_send![&*panel.popover, isShown];
-                if !shown {
-                    let bounds: NSRect = msg_send![anchor, bounds];
-                    let _: () = msg_send![&*panel.popover, showRelativeToRect: bounds, ofView: anchor, preferredEdge: 1usize];
-                    let window: Obj = msg_send![&*panel.view, window];
-                    let _: () = msg_send![window, makeKeyWindow];
+                if shown {
+                    let _: () = msg_send![&*panel.popover, close];
                 }
+                let bounds: NSRect = msg_send![anchor, bounds];
+                let _: () = msg_send![&*panel.popover, showRelativeToRect: bounds, ofView: anchor, preferredEdge: 1usize];
+                let window: Obj = msg_send![&*panel.view, window];
+                let _: () = msg_send![window, makeKeyWindow];
             }
             let snapshot = self.shared.snapshot.lock().unwrap().clone();
             self.refresh_detail(&snapshot);
@@ -733,18 +755,8 @@ impl App {
         }
     }
 }
-fn hit_metric(cells: &[BarCell], x: f64, width: f64) -> Option<usize> {
-    if !x.is_finite() || x < 0. || x >= width {
-        return None;
-    }
-    let mut left = ((width - strip_width(cells)) / 2.).floor() + 4.;
-    for (i, cell) in cells.iter().enumerate() {
-        if x < left + cell.width + 1. || i + 1 == cells.len() {
-            return cell.metric;
-        }
-        left += cell.width + 2.;
-    }
-    None
+fn indicator_kind(tag: isize) -> Option<usize> {
+    usize::try_from(tag).ok().filter(|&i| i < 6)
 }
 // Fixed dot matrix. Three batched paths, no animation timer or per-dot views.
 extern "C-unwind" fn draw_graph(view: Obj, _: Sel, _: NSRect) {
@@ -854,12 +866,12 @@ extern "C-unwind" fn detail_refresh(_: Obj, _: Sel, _: Obj) {
 extern "C-unwind" fn tab(_: Obj, _: Sel, sender: Obj) {
     with_app(|a| unsafe {
         let index: isize = msg_send![sender, tag];
-        let anchor: Obj = msg_send![&*a.status, button];
-        a.open_detail(index as usize, 0, anchor);
         let from_menu: bool = msg_send![sender, isKindOfClass: class!(NSMenuItem)];
-        if from_menu && a.details.as_ref().is_some_and(|p| p.window.is_none()) {
-            a.pin_detail();
+        if from_menu {
+            a.detach_detail_window();
         }
+        let anchor = a.detail_anchor(index as usize);
+        a.open_detail(index as usize, 0, anchor);
     });
 }
 extern "C-unwind" fn closed(_: Obj, _: Sel, _: Obj) {
@@ -945,6 +957,7 @@ extern "C-unwind" fn pause(_: Obj, _: Sel, _: Obj) {
 impl App {
     unsafe fn pin_detail(&mut self) {
         unsafe {
+            let anchor = self.details.as_ref().map(|p| self.detail_anchor(p.kind));
             let Some(p) = &mut self.details else {
                 return;
             };
@@ -972,7 +985,7 @@ impl App {
                 let _: () = msg_send![&*window, setContentView: &*blank];
                 let _: () = msg_send![controller, setView: &*p.view];
                 string(p.pin_button, sel!(setTitle:), "Fijar ↗");
-                let anchor: Obj = msg_send![&*self.status, button];
+                let anchor = anchor.unwrap();
                 let bounds: NSRect = msg_send![anchor, bounds];
                 let _: () = msg_send![&*p.popover, showRelativeToRect: bounds, ofView: anchor, preferredEdge: 1usize];
                 let window: Obj = msg_send![&*p.view, window];
@@ -1088,31 +1101,21 @@ pub(super) unsafe fn register_actions(builder: &mut ClassBuilder) {
 mod tests {
     use super::*;
     #[test]
-    fn hit_test_preserves_metric_identity_when_hidden() {
-        let config = Config {
-            enabled: [false, true, false, false, true, false],
-            ..Default::default()
-        };
-        let cells = bar_cells(&config, &Snapshot::default());
-        let width = strip_width(&cells);
-        assert_eq!(hit_metric(&cells, 10., width), Some(1));
-        assert_eq!(hit_metric(&cells, width - 2., width), Some(4));
-        assert_eq!(hit_metric(&cells, -1., width), None);
+    fn indicator_tags_are_stable_for_every_visibility_combination() {
+        assert_eq!(indicator_kind(-1), None);
+        assert_eq!(indicator_kind(6), None);
         for mask in 1..64 {
             let config = Config {
                 enabled: std::array::from_fn(|i| mask & (1 << i) != 0),
                 ..Default::default()
             };
-            let cells = bar_cells(&config, &Snapshot::default());
-            let width = strip_width(&cells);
-            let mut x = 4.;
-            for cell in &cells {
-                assert_eq!(hit_metric(&cells, x + cell.width / 2., width), cell.metric);
-                if cell.metric == Some(4) {
+            for cell in bar_cells(&config, &Snapshot::default()) {
+                let metric = cell.metric.unwrap();
+                assert_eq!(indicator_kind(metric as isize), Some(metric));
+                if metric == 4 {
                     assert!(cell.top.starts_with('↑'));
                     assert!(cell.bottom.starts_with('↓'));
                 }
-                x += cell.width + 2.;
             }
         }
     }

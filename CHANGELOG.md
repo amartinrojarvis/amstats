@@ -1,5 +1,13 @@
 # Historial de cambios
 
+## 0.3.1 — 2026-11-06
+
+- Corrige la selección desde la barra: cada indicador tiene un botón nativo con identidad propia, sin deducir el recurso de las coordenadas del evento.
+- CPU abre CPU, batería abre batería y el desplegable se ancla al indicador pulsado.
+- Elimina la apertura automática de ventanas al usar el menú o los atajos. La ventana separada solo se crea al pulsar «Fijar»; volver a la barra recupera el desplegable.
+- Elimina el resaltado de fondo del bloque completo y conserva las dos líneas compactas: 206 pt de anchos solicitados, dentro de los 212 pt anteriores.
+- Solo redibuja el indicador cuyo texto cambia, sin temporizadores ni lecturas adicionales.
+
 ## 0.3.0 — 2026-11-06
 
 - Panel contextual para cada indicador, con tarjetas, pestañas, colores por recurso y opción de fijar como ventana.

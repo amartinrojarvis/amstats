@@ -46,6 +46,7 @@ struct App {
     config: Config,
     target: Retained<AnyObject>,
     status: Retained<AnyObject>,
+    indicators: Vec<Indicator>,
     strip: Retained<AnyObject>,
     cells: Vec<BarCell>,
     styles: Styles,
@@ -66,6 +67,10 @@ struct App {
     login: Obj,
     settings_status: Obj,
     _power_notification: Option<crate::platform::PowerNotification>,
+}
+struct Indicator {
+    status: Retained<AnyObject>,
+    strip: Retained<AnyObject>,
 }
 fn with_app(action: impl FnOnce(&mut App)) {
     APP.with(|cell| {
@@ -244,15 +249,21 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
 fn strip_width(cells: &[BarCell]) -> f64 {
     cells.iter().map(|c| c.width).sum::<f64>() + cells.len().saturating_sub(1) as f64 * 2. + 8.
 }
+fn indicator_width(cell: &BarCell) -> f64 {
+    cell.width + 2.
+}
 extern "C-unwind" fn draw_strip(view: *mut AnyObject, _: Sel, _: NSRect) {
     APP.with(|cell| {
         let Ok(guard) = cell.try_borrow() else { return; };
         let Some(app) = guard.as_ref() else { return; };
         unsafe {
             let bounds: NSRect = msg_send![view, bounds];
-            let mut x = ((bounds.size.width - strip_width(&app.cells)) / 2.).floor() + 4.;
+            let metric = app.indicators.iter().position(|indicator| Retained::as_ptr(&indicator.strip) == view);
+            let cells = app.cells.iter().filter(|cell| metric.is_none_or(|i| cell.metric == Some(i)));
+            let width = cells.clone().map(|c| c.width).sum::<f64>() + cells.clone().count().saturating_sub(1) as f64 * 2.;
+            let mut x = ((bounds.size.width - width) / 2.).floor();
             let y = ((bounds.size.height - 22.) / 2.).floor();
-            for cell in &app.cells {
+            for cell in cells {
                 let top_style = if cell.network { &app.styles.network } else { &app.styles.header };
                 let bottom_style = if cell.network { &app.styles.network } else { &app.styles.value };
                 let top = NSString::from_str(&cell.top); let bottom = NSString::from_str(&cell.bottom);
@@ -554,12 +565,35 @@ impl App {
                 msg_send![&*status, setAutosaveName: &*NSString::from_str("AMStats.Compact")];
             let _: () = msg_send![&*status, setVisible: true];
             let button: Obj = msg_send![&*status, button];
+            let _: () = msg_send![button, setTag: -1isize];
             let _: () = msg_send![button, setTarget: target_ptr];
             let _: () = msg_send![button, setAction: sel!(toggle:)];
             let _: isize = msg_send![button, sendActionOn: (1usize << 2) | (1usize << 4)];
             let _: () = msg_send![button, setAccessibilityLabel: &*NSString::from_str("AMStats · monitor del sistema")];
             let strip = make_strip(rect(0., 0., 212., 22.));
             let _: () = msg_send![button, addSubview: &*strip];
+            let mut indicators = Vec::new();
+            // macOS places new status items to the left. Each indicator owns its
+            // native button and stable tag; selection never depends on currentEvent.x.
+            for i in (0..6).rev() {
+                let item: Retained<AnyObject> = msg_send![bar, statusItemWithLength: 29f64];
+                let _: () = msg_send![&*item, setAutosaveName: &*NSString::from_str(&format!("AMStats.Metric.{i}"))];
+                let button: Obj = msg_send![&*item, button];
+                let _: () = msg_send![button, setTag: i as isize];
+                let _: () = msg_send![button, setTarget: target_ptr];
+                let _: () = msg_send![button, setAction: sel!(toggle:)];
+                let _: isize = msg_send![button, sendActionOn: (1usize << 2) | (1usize << 4)];
+                let cell: Obj = msg_send![button, cell];
+                let _: () = msg_send![cell, setHighlightsBy: 0usize];
+                let _: () = msg_send![button, setAccessibilityLabel: &*NSString::from_str(&format!("AMStats · {}", NAMES[i]))];
+                let strip = make_strip(rect(0., 0., 29., 22.));
+                let _: () = msg_send![button, addSubview: &*strip];
+                indicators.push(Indicator {
+                    status: item,
+                    strip,
+                });
+            }
+            indicators.reverse();
             let styles = Styles {
                 header: text_style(7., 0.23, true),
                 value: text_style(10.5, 0., false),
@@ -579,6 +613,7 @@ impl App {
                 config,
                 target,
                 status,
+                indicators,
                 strip,
                 cells: Vec::new(),
                 styles,
@@ -846,7 +881,39 @@ impl App {
             if cells != self.cells {
                 let width = strip_width(&cells);
                 let old_width = strip_width(&self.cells);
-                self.cells = cells;
+                let layout_changed = cells.len() != self.cells.len()
+                    || cells
+                        .iter()
+                        .zip(&self.cells)
+                        .any(|(a, b)| a.metric != b.metric || a.width != b.width);
+                let previous = std::mem::replace(&mut self.cells, cells);
+                if layout_changed {
+                    let _: () = msg_send![&*self.status, setVisible: !self.config.any_enabled()];
+                }
+                for (i, indicator) in self.indicators.iter().enumerate() {
+                    if layout_changed {
+                        let _: () =
+                            msg_send![&*indicator.status, setVisible: self.config.enabled[i]];
+                    }
+                    if let Some(cell) = self.cells.iter().find(|c| c.metric == Some(i)) {
+                        if previous.iter().find(|c| c.metric == Some(i)) == Some(cell) {
+                            continue;
+                        }
+                        let button: Obj = msg_send![&*indicator.status, button];
+                        if layout_changed {
+                            let width = indicator_width(cell);
+                            let _: () = msg_send![&*indicator.status, setLength: width];
+                            let bounds: NSRect = msg_send![button, bounds];
+                            let _: () = msg_send![&*indicator.strip, setFrame: rect(0.,0.,width,bounds.size.height)];
+                        }
+                        let _: () = msg_send![&*indicator.strip, setNeedsDisplay: true];
+                        let (value, detail, _) = row_text(i, &snapshot);
+                        let tooltip =
+                            NSString::from_str(&format!("{}: {} · {}", NAMES[i], value, detail));
+                        let _: () = msg_send![button, setToolTip: &*tooltip];
+                        let _: () = msg_send![button, setAccessibilityValue: &*tooltip];
+                    }
+                }
                 if width != old_width {
                     let _: () = msg_send![&*self.status, setLength: width];
                     let button: Obj = msg_send![&*self.status, button];
@@ -1316,7 +1383,8 @@ mod tests {
                 ..Default::default()
             };
             let cells = bar_cells(&config, &snapshot);
-            assert!(strip_width(&cells) <= 220.);
+            assert_eq!(strip_width(&cells), 212.);
+            assert_eq!(cells.iter().map(indicator_width).sum::<f64>(), 206.);
             for cell in cells {
                 for (text, font_size) in [
                     (&cell.top, if cell.network { 9. } else { 7. }),

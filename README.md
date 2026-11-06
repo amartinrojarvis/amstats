@@ -2,7 +2,7 @@
 
 Monitor de barra de menús para **macOS 13+ y Apple Silicon**, escrito en Rust con interfaz AppKit. CPU, RAM, GPU, almacenamiento, subida/bajada de red y batería con tiempo estimado de carga o autonomía.
 
-La barra reúne los seis indicadores en **un único bloque de 212 pt**, con separación de 2 pt y dos líneas alineadas. Los valores usan cifras de ancho fijo y porcentajes pequeños. Los indicadores ocultos desaparecen también del muestreo. Un clic abre el detalle; desde Ajustes se puede abrir además un resumen en ventana.
+La barra mantiene el formato compacto de dos líneas y un presupuesto de **212 pt**. Cada indicador tiene un botón nativo independiente; sus anchos solicitados suman 206 pt con los seis visibles. Los valores usan cifras de ancho fijo y porcentajes pequeños. Los indicadores ocultos desaparecen también del muestreo. Un clic abre el detalle; desde Ajustes se puede abrir además un resumen en ventana.
 
 ## Abrir e instalar
 
@@ -27,12 +27,12 @@ La compilación genera una app ARM64 con firma local ad hoc. La distribución a 
 - **CPU / RAM / GPU / SSD:** porcentaje de utilización. SSD expresa espacio ocupado, no actividad de entrada/salida.
 - **↑ / ↓:** subida en la línea superior y descarga en la inferior. En la barra, `K`, `M` y `G` equivalen a KB/s, MB/s y GB/s decimales. El panel muestra las unidades completas.
 - **Batería:** porcentaje y tiempo disponible; `↗` indica tiempo hasta completar la carga y `↘`, autonomía. `AC` indica alimentación externa. El panel distingue carga completa, carga en pausa y estimación todavía no disponible.
-- **Detalle contextual:** pulsa CPU, RAM, GPU, SSD, red o batería en la barra para abrir ese recurso. En red, pulsar la línea superior ordena por subida y la inferior por descarga. Gráficos LED con 60 segundos de historial; subida desde el centro hacia arriba y descarga hacia abajo, con escala compartida.
-- **Procesos:** hasta diez entradas ordenadas de mayor a menor, agrupación por aplicación, desglose de sus procesos, PID y memoria. Puedes elegir el sentido de E/S, pausar y fijar el panel como ventana. La lista mantiene el orden mientras el cursor está encima.
+- **Detalle contextual:** pulsa CPU, RAM, GPU, SSD, red o batería en la barra para abrir ese recurso. En red puedes elegir el orden por subida o descarga desde el selector del panel. Gráficos LED con 60 segundos de historial; subida desde el centro hacia arriba y descarga hacia abajo, con escala compartida.
+- **Procesos:** hasta diez entradas ordenadas de mayor a menor, agrupación por aplicación, desglose de sus procesos, PID y memoria. Puedes elegir el sentido de E/S, pausar y fijar el panel como ventana. Solo «Fijar» crea una ventana separada; al pulsar un indicador se vuelve al desplegable anclado a él. La lista mantiene el orden mientras el cursor está encima.
 - **Cargador:** potencia declarada en W, potencia de carga/descarga de batería, salud estimada, ciclos y capacidad. La potencia del adaptador no es el consumo medido en el enchufe.
 - **Ajustes:** activar indicadores, seleccionar 1/2/5 segundos, reducir frecuencia en batería e iniciar sesión automáticamente. La vista previa reproduce la barra real.
 - **Acerca de:** versión instalada, Alberto Martín, enlaces a [X](https://x.com/amartinro) e [Instagram](https://www.instagram.com/amartinro/) (@amartinro), y controles de actualización.
-- **Atajos con la app activa:** `⌘1` a `⌘6` detalle de cada recurso en ventana, `⌘,` ajustes, `⌘R` resumen, `⌘U` buscar actualizaciones y `⌘Q` salir.
+- **Atajos con la app activa:** `⌘1` a `⌘6` desplegable de cada recurso, `⌘,` ajustes, `⌘R` resumen, `⌘U` buscar actualizaciones y `⌘Q` salir.
 - Al desactivar todos los indicadores permanece un pequeño acceso **AM** para volver a los ajustes.
 
 Las preferencias se guardan con `NSUserDefaults`, dominio `dev.amartin.amstats`. El inicio automático se consulta y modifica a través de `SMAppService`; si macOS requiere aprobación se muestra su estado y un acceso a Ítems de inicio. No se activa por defecto.

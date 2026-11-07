@@ -588,21 +588,6 @@ impl App {
     }
     pub(super) unsafe fn toggle_detail(&mut self, anchor: Obj) {
         unsafe {
-            let application: Obj = msg_send![class!(NSApplication), sharedApplication];
-            let event: Obj = msg_send![application, currentEvent];
-            let event_type: usize = msg_send![event, type];
-            let modifiers: usize = msg_send![event, modifierFlags];
-            if event_type == 4 || modifiers & (1 << 18) != 0 {
-                let menu: Obj = msg_send![application, mainMenu];
-                let first: Obj = msg_send![menu, itemAtIndex: 0isize];
-                let submenu: Obj = msg_send![first, submenu];
-                let _: () = msg_send![class!(NSMenu), popUpContextMenu: submenu, withEvent: event, forView: anchor];
-                self.refresh();
-                if let Some(panel) = &self.details {
-                    panel.shared.pending.store(false, Ordering::Release);
-                }
-                return;
-            }
             let tag: isize = msg_send![anchor, tag];
             let Some(kind) = indicator_kind(tag) else {
                 self.show_dashboard(anchor);

@@ -94,6 +94,8 @@ Las pruebas cubren diferencias y desbordamiento de CPU, reinicio y aparición de
 
 La versión 0.3.0 añade comprobaciones de agrupación, contadores, historial acotado y selección con indicadores ocultos. Las pruebas visuales y mediciones de sus paneles se documentan en [verification-0.3.0.md](docs/verification-0.3.0.md).
 
+La versión 0.3.2 corrige las acciones del menú contextual de los indicadores, incluida la apertura de Ajustes. Causa y validación: [verification-0.3.2.md](docs/verification-0.3.2.md).
+
 ## Desarrollo y versiones
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para preparar el entorno y [CHANGELOG.md](CHANGELOG.md) para el historial. GitHub Actions comprueba formato, Clippy, pruebas y empaquetado ARM64 en cada cambio de `main` y cada pull request.

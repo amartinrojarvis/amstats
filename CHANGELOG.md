@@ -1,5 +1,11 @@
 # Historial de cambios
 
+## 0.3.2 — 2026-11-07
+
+- Corrige la apertura de Ajustes desde el menú contextual de cualquier indicador, tanto con clic derecho como con Control-clic.
+- Recupera también las acciones de Resumen, Acerca de, Buscar actualizaciones y selección de detalles desde ese menú.
+- Permite atender las actualizaciones de la interfaz mientras el menú está abierto, sin bloquear el estado de la aplicación.
+
 ## 0.3.1 — 2026-11-06
 
 - Corrige la selección desde la barra: cada indicador tiene un botón nativo con identidad propia, sin deducir el recurso de las coordenadas del evento.

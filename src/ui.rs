@@ -1167,9 +1167,22 @@ extern "C-unwind" fn change(_: *mut AnyObject, _: Sel, sender: Obj) {
     with_app(|a| a.change(sender));
 }
 extern "C-unwind" fn toggle(_: *mut AnyObject, _: Sel, sender: Obj) {
-    with_app(|a| unsafe {
-        a.toggle_detail(sender);
-    });
+    unsafe {
+        let application: Obj = msg_send![class!(NSApplication), sharedApplication];
+        let event: Obj = msg_send![application, currentEvent];
+        let event_type: usize = msg_send![event, type];
+        let modifiers: usize = msg_send![event, modifierFlags];
+        if event_type == 4 || modifiers & (1 << 18) != 0 {
+            let menu: Obj = msg_send![application, mainMenu];
+            let first: Obj = msg_send![menu, itemAtIndex: 0isize];
+            let submenu: Obj = msg_send![first, submenu];
+            // Menu tracking runs a nested event loop and invokes actions before
+            // returning. Keep App unborrowed so actions and refreshes can run.
+            let _: () = msg_send![class!(NSMenu), popUpContextMenu: submenu, withEvent: event, forView: sender];
+        } else {
+            with_app(|a| a.toggle_detail(sender));
+        }
+    }
 }
 extern "C-unwind" fn summary(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| a.show_summary());

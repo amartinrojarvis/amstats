@@ -28,10 +28,10 @@ La compilación genera una app ARM64 con firma local ad hoc. La distribución a 
 - **↑ / ↓:** subida en la línea superior y descarga en la inferior. En la barra, `K`, `M` y `G` equivalen a KB/s, MB/s y GB/s decimales. El panel muestra las unidades completas.
 - **Batería:** porcentaje y tiempo disponible; `↗` indica tiempo hasta completar la carga y `↘`, autonomía. `AC` indica alimentación externa. El panel distingue carga completa, carga en pausa y estimación todavía no disponible.
 - **Detalle contextual:** pulsa CPU, RAM, GPU, SSD, red o batería en la barra para abrir ese recurso. En red puedes elegir el orden por subida o descarga desde el selector del panel. Gráficos LED con 60 segundos de historial; subida desde el centro hacia arriba y descarga hacia abajo, con escala compartida.
-- **Procesos:** hasta diez entradas ordenadas de mayor a menor, agrupación por aplicación, desglose de sus procesos, PID y memoria. Puedes elegir el sentido de E/S, pausar y fijar el panel como ventana. Solo «Fijar» crea una ventana separada; al pulsar un indicador se vuelve al desplegable anclado a él. La lista mantiene el orden mientras el cursor está encima.
+- **Procesos:** hasta diez entradas ordenadas de mayor a menor, agrupación por aplicación, desglose de sus procesos, PID y memoria. Puedes elegir el sentido de E/S, pausar y fijar el panel como ventana. «Separar» abre una ventana independiente y «A la barra» recupera el desplegable; al pulsar un indicador se vuelve al desplegable anclado a él. La lista mantiene el orden mientras el cursor está encima.
 - **Cargador:** potencia declarada en W, potencia de carga/descarga de batería, salud estimada, ciclos y capacidad. La potencia del adaptador no es el consumo medido en el enchufe.
-- **Ajustes:** activar indicadores, seleccionar 1/2/5 segundos, reducir frecuencia en batería e iniciar sesión automáticamente. La vista previa reproduce la barra real.
-- **Acerca de:** versión instalada, Alberto Martín, enlaces a [X](https://x.com/amartinro) e [Instagram](https://www.instagram.com/amartinro/) (@amartinro), y controles de actualización.
+- **Ajustes:** pestañas General y Actualizaciones. En General puedes activar indicadores, seleccionar 1/2/5 segundos, reducir frecuencia en batería y abrir AMStats al iniciar sesión. La vista previa reproduce la barra real.
+- **Acerca de:** versión instalada, Alberto Martín, enlaces a [X](https://x.com/amartinro) e [Instagram](https://www.instagram.com/amartinro/) (@amartinro), y acceso a la pestaña de actualizaciones.
 - **Atajos con la app activa:** `⌘1` a `⌘6` desplegable de cada recurso, `⌘,` ajustes, `⌘R` resumen, `⌘U` buscar actualizaciones y `⌘Q` salir.
 - Al desactivar todos los indicadores permanece un pequeño acceso **AM** para volver a los ajustes.
 
@@ -39,7 +39,7 @@ Las preferencias se guardan con `NSUserDefaults`, dominio `dev.amartin.amstats`.
 
 ## Actualizaciones desde la app
 
-Desde **0.2.0**, abre **Acerca de → Buscar actualizaciones…**. Sparkle compara la versión instalada con la última release estable, muestra las novedades, verifica la firma y permite instalar y reiniciar la app. La comprobación automática está activada cada 24 horas; puedes desactivarla. La descarga e instalación automáticas son opcionales y están desactivadas inicialmente.
+Pulsa **Buscar actualizaciones…** en el panel de cualquier recurso, en Resumen o en el menú que aparece al hacer clic derecho en un indicador. Con la app activa también puedes usar **⌘U**. En **Ajustes → Actualizaciones** encontrarás la versión instalada, la búsqueda manual y las preferencias automáticas. Sparkle compara la versión instalada con la última release estable, muestra las novedades, verifica la firma y permite instalar y reiniciar la app. La comprobación automática está activada cada 24 horas; puedes desactivarla. La descarga e instalación automáticas son opcionales y están desactivadas inicialmente.
 
 El feed y los ZIP usan HTTPS y firmas Ed25519. La clave privada permanece en el Llavero del mantenedor. No se envía el perfil del sistema a Sparkle. La firma de actualización no sustituye la notarización de Apple: los paquetes actuales usan firma ad hoc. Instala la app en una carpeta de Aplicaciones con permisos de escritura; macOS puede solicitar autorización para sustituirla.
 

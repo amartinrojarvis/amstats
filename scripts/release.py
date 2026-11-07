@@ -63,7 +63,7 @@ def prepare():
     (output / "release-notes.md").write_text(
         f"AMStats {version} para macOS 13+ y Apple Silicon.\n\n{notes}\n\n"
         "Descarga el ZIP y copia AMStats.app a Aplicaciones. Si usas 0.1.0, esta primera instalación es manual; "
-        "desde 0.2.0 puedes actualizar desde Acerca de → Buscar actualizaciones.\n\n"
+        "desde 0.2.0 puedes usar Buscar actualizaciones en el menú de AMStats; en 0.4.0 también está en Ajustes → Actualizaciones y en los paneles.\n\n"
         "Archivo y feed firmados con Ed25519. Aplicación con firma ad hoc, sin notarización de Apple.\n"
     )
     print(f"Release preparada y firmas verificadas: {output}")

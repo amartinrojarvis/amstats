@@ -6,8 +6,8 @@
 <key>CFBundleExecutable</key><string>amstats</string>
 <key>CFBundleIdentifier</key><string>dev.amartin.amstats</string>
 <!-- scripts/bundle.sh injects both versions from Cargo.toml. -->
-<key>CFBundleVersion</key><string>0.3.2</string>
-<key>CFBundleShortVersionString</key><string>0.3.2</string>
+<key>CFBundleVersion</key><string>0.4.0</string>
+<key>CFBundleShortVersionString</key><string>0.4.0</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>

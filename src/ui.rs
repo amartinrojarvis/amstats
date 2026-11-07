@@ -66,6 +66,7 @@ struct App {
     saver: Obj,
     login: Obj,
     settings_status: Obj,
+    settings_tabs: Obj,
     _power_notification: Option<crate::platform::PowerNotification>,
 }
 struct Indicator {
@@ -369,19 +370,10 @@ unsafe fn make_popover(target: Obj) -> (Retained<AnyObject>, Vec<Row>, Obj) {
         );
         button(
             root,
-            rect(269., 44., 82., 30.),
-            "Salir",
+            rect(125., 44., 226., 30.),
+            "Buscar actualizaciones…",
             target,
-            sel!(quit:),
-            0,
-            false,
-        );
-        button(
-            root,
-            rect(127., 44., 134., 30.),
-            "Acerca de…",
-            target,
-            sel!(about:),
+            sel!(checkUpdates:),
             0,
             false,
         );
@@ -411,19 +403,28 @@ struct Settings {
     login: Obj,
     status: Obj,
     preview: Obj,
+    tabs: Obj,
+    update_checks: Obj,
+    update_install: Obj,
 }
 unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
     unsafe {
         let window: Allocated<AnyObject> = msg_send![class!(NSWindow), alloc];
-        let window: Retained<AnyObject> = msg_send![window, initWithContentRect: rect(0.,0.,460.,570.), styleMask: 3usize, backing: 2usize, defer: false];
+        let window: Retained<AnyObject> = msg_send![window, initWithContentRect: rect(0.,0.,500.,660.), styleMask: 3usize, backing: 2usize, defer: false];
         let _: () = msg_send![&window, setTitle: &*NSString::from_str("Ajustes de AMStats")];
         let _: () = msg_send![&window, setReleasedWhenClosed: false];
         let _: () = msg_send![&window, center];
-        let root: Obj = msg_send![&window, contentView];
+        let content: Obj = msg_send![&window, contentView];
+        let tabs: Allocated<AnyObject> = msg_send![class!(NSTabView), alloc];
+        let tabs: Retained<AnyObject> = msg_send![tabs, initWithFrame: rect(16.,16.,468.,628.)];
+        let _: () = msg_send![content, addSubview: &*tabs];
+        let general: Retained<AnyObject> = msg_send![class!(NSView), new];
+        let _: () = msg_send![&*general, setFrame: rect(0.,0.,460.,570.)];
+        let root = Retained::as_ptr(&general) as Obj;
         label(
             root,
             rect(28., 520., 400., 30.),
-            "Menos ruido. Más información.",
+            "Barra de menús",
             21.,
             true,
             false,
@@ -458,7 +459,7 @@ unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
         label(
             root,
             rect(28., 302., 404., 20.),
-            "Los indicadores ocultos dejan de medir su uso.",
+            "Elige qué indicadores aparecen y se miden.",
             11.,
             false,
             true,
@@ -466,7 +467,7 @@ unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
         label(
             root,
             rect(28., 263., 404., 20.),
-            "FRECUENCIA DE MUESTREO",
+            "ACTUALIZACIÓN DE LOS INDICADORES",
             10.,
             true,
             true,
@@ -516,8 +517,8 @@ unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
         );
         button(
             root,
-            rect(25., 66., 195., 29.),
-            "Ítems de inicio de macOS…",
+            rect(25., 66., 245., 29.),
+            "Gestionar inicio en macOS…",
             target,
             sel!(loginSettings:),
             0,
@@ -542,6 +543,102 @@ unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
         );
         let _: () = msg_send![status, setMaximumNumberOfLines: 2isize];
         let _: () = msg_send![status, setLineBreakMode: 0isize];
+        let updates: Retained<AnyObject> = msg_send![class!(NSView), new];
+        let _: () = msg_send![&*updates, setFrame: rect(0.,0.,460.,570.)];
+        let update_root = Retained::as_ptr(&updates) as Obj;
+        label(
+            update_root,
+            rect(28., 520., 404., 30.),
+            "Actualizaciones",
+            21.,
+            true,
+            false,
+        );
+        label(
+            update_root,
+            rect(28., 488., 404., 22.),
+            &format!("Versión instalada: {}", crate::updates::VERSION),
+            12.,
+            false,
+            true,
+        );
+        button(
+            update_root,
+            rect(24., 430., 310., 34.),
+            "Buscar actualizaciones…",
+            target,
+            sel!(checkUpdates:),
+            0,
+            false,
+        );
+        label(
+            update_root,
+            rect(28., 386., 404., 24.),
+            "Busca e instala la última versión de AMStats.",
+            12.,
+            false,
+            true,
+        );
+        label(
+            update_root,
+            rect(28., 326., 404., 20.),
+            "ACTUALIZACIONES AUTOMÁTICAS",
+            10.,
+            true,
+            true,
+        );
+        let update_checks = button(
+            update_root,
+            rect(24., 284., 412., 28.),
+            "Buscar nuevas versiones automáticamente",
+            target,
+            sel!(updatePreference:),
+            0,
+            true,
+        );
+        label(
+            update_root,
+            rect(28., 254., 404., 22.),
+            "AMStats comprueba si hay novedades una vez al día.",
+            11.,
+            false,
+            true,
+        );
+        let update_install = button(
+            update_root,
+            rect(24., 204., 412., 28.),
+            "Descargar e instalar automáticamente",
+            target,
+            sel!(updatePreference:),
+            1,
+            true,
+        );
+        label(
+            update_root,
+            rect(28., 174., 404., 22.),
+            "Requiere la búsqueda automática de nuevas versiones.",
+            11.,
+            false,
+            true,
+        );
+        let help = label(
+            update_root,
+            rect(28., 66., 404., 50.),
+            "También puedes buscar actualizaciones desde cualquier indicador con clic derecho o con ⌘U.",
+            11.,
+            false,
+            true,
+        );
+        let _: () = msg_send![help, setMaximumNumberOfLines: 3isize];
+        let _: () = msg_send![help, setLineBreakMode: 0isize];
+        for (title, view) in [("General", &*general), ("Actualizaciones", &*updates)] {
+            let item: Allocated<AnyObject> = msg_send![class!(NSTabViewItem), alloc];
+            let item: Retained<AnyObject> =
+                msg_send![item, initWithIdentifier: &*NSString::from_str(title)];
+            let _: () = msg_send![&*item, setLabel: &*NSString::from_str(title)];
+            let _: () = msg_send![&*item, setView: view];
+            let _: () = msg_send![&*tabs, addTabViewItem: &*item];
+        }
         Settings {
             window,
             switches,
@@ -550,6 +647,9 @@ unsafe fn make_settings(target: Obj, config: &Config) -> Settings {
             login,
             status,
             preview: Retained::as_ptr(&preview) as Obj,
+            tabs: Retained::as_ptr(&tabs) as Obj,
+            update_checks,
+            update_install,
         }
     }
 }
@@ -633,6 +733,7 @@ impl App {
                 saver: ptr::null_mut(),
                 login: ptr::null_mut(),
                 settings_status: ptr::null_mut(),
+                settings_tabs: ptr::null_mut(),
                 _power_notification: crate::platform::PowerNotification::new(power_changed),
             };
             app.refresh();
@@ -668,6 +769,14 @@ impl App {
     fn show_summary(&mut self) {
         self.hide_detail();
         unsafe {
+            if let Some(popover) = &self.popover {
+                let _: () = msg_send![&**popover, close];
+            }
+            if let Some(about) = &self.about {
+                let _: () = msg_send![&**about, orderOut: ptr::null::<AnyObject>()];
+            }
+            let app: Obj = msg_send![class!(NSApplication), sharedApplication];
+            let _: () = msg_send![app, activateIgnoringOtherApps: true];
             if let Some(settings) = &self.settings {
                 let _: () = msg_send![&**settings, orderOut: ptr::null::<AnyObject>()];
             }
@@ -697,6 +806,12 @@ impl App {
     fn show_settings(&mut self) {
         self.hide_detail();
         unsafe {
+            if let Some(summary) = &self.summary {
+                let _: () = msg_send![&*summary.window, orderOut: ptr::null::<AnyObject>()];
+            }
+            if let Some(about) = &self.about {
+                let _: () = msg_send![&**about, orderOut: ptr::null::<AnyObject>()];
+            }
             if let Some(popover) = &self.popover {
                 let _: () = msg_send![&**popover, close];
             }
@@ -709,16 +824,32 @@ impl App {
                 self.login = settings.login;
                 self.settings_status = settings.status;
                 self.preview = settings.preview;
+                self.settings_tabs = settings.tabs;
+                self.update_checks = settings.update_checks;
+                self.update_install = settings.update_install;
             }
             self.refresh_login();
+            self.refresh_update_preferences();
             let app: Obj = msg_send![class!(NSApplication), sharedApplication];
             let _: () = msg_send![app, activateIgnoringOtherApps: true];
             let _: () = msg_send![&**self.settings.as_ref().unwrap(), makeKeyAndOrderFront: ptr::null::<AnyObject>()];
         }
     }
+    fn show_updates(&mut self) {
+        self.show_settings();
+        unsafe {
+            let _: () = msg_send![self.settings_tabs, selectTabViewItemAtIndex: 1isize];
+        }
+    }
     fn show_about(&mut self) {
         self.hide_detail();
         unsafe {
+            if let Some(summary) = &self.summary {
+                let _: () = msg_send![&*summary.window, orderOut: ptr::null::<AnyObject>()];
+            }
+            if let Some(settings) = &self.settings {
+                let _: () = msg_send![&**settings, orderOut: ptr::null::<AnyObject>()];
+            }
             if let Some(popover) = &self.popover {
                 let _: () = msg_send![&**popover, close];
             }
@@ -785,38 +916,12 @@ impl App {
                     2,
                     false,
                 );
-                label(
-                    root,
-                    rect(28., 174., 404., 20.),
-                    "ACTUALIZACIONES",
-                    10.,
-                    true,
-                    true,
-                );
-                self.update_checks = button(
-                    root,
-                    rect(24., 139., 412., 28.),
-                    "Buscar versiones nuevas automáticamente",
-                    target,
-                    sel!(updatePreference:),
-                    0,
-                    true,
-                );
-                self.update_install = button(
-                    root,
-                    rect(24., 106., 412., 28.),
-                    "Descargar e instalar actualizaciones automáticamente",
-                    target,
-                    sel!(updatePreference:),
-                    1,
-                    true,
-                );
                 button(
                     root,
-                    rect(24., 61., 412., 32.),
-                    "Buscar actualizaciones…",
+                    rect(24., 117., 412., 32.),
+                    "Actualizaciones…",
                     target,
-                    sel!(checkUpdates:),
+                    sel!(updates:),
                     0,
                     false,
                 );
@@ -837,7 +942,7 @@ impl App {
         }
     }
     fn refresh_update_preferences(&self) {
-        if self.about.is_none() {
+        if self.settings.is_none() {
             return;
         }
         unsafe {
@@ -852,7 +957,8 @@ impl App {
             let _: () = msg_send![self.update_install, setEnabled: self.updater.is_ok() && checks];
         }
     }
-    fn check_updates(&self) {
+    fn check_updates(&mut self) -> Option<Retained<AnyObject>> {
+        self.hide_detail();
         unsafe {
             if let Some(popover) = &self.popover {
                 let _: () = msg_send![&**popover, close];
@@ -860,13 +966,16 @@ impl App {
             let app: Obj = msg_send![class!(NSApplication), sharedApplication];
             let _: () = msg_send![app, activateIgnoringOtherApps: true];
             match &self.updater {
-                Ok(updater) => updater.check(),
+                Ok(updater) => {
+                    updater.check();
+                    None
+                }
                 Err(message) => {
                     let alert: Retained<AnyObject> = msg_send![class!(NSAlert), new];
                     let _: () = msg_send![&*alert, setMessageText: &*NSString::from_str("Actualizador no disponible")];
                     let _: () =
                         msg_send![&*alert, setInformativeText: &*NSString::from_str(message)];
-                    let _: isize = msg_send![&*alert, runModal];
+                    Some(alert)
                 }
             }
         }
@@ -1190,11 +1299,21 @@ extern "C-unwind" fn summary(_: *mut AnyObject, _: Sel, _: Obj) {
 extern "C-unwind" fn settings(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| a.show_settings());
 }
+extern "C-unwind" fn updates(_: *mut AnyObject, _: Sel, _: Obj) {
+    with_app(|a| a.show_updates());
+}
 extern "C-unwind" fn about(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| a.show_about());
 }
 extern "C-unwind" fn check_updates(_: *mut AnyObject, _: Sel, _: Obj) {
-    with_app(|a| a.check_updates());
+    let mut alert = None;
+    with_app(|a| alert = a.check_updates());
+    // A modal error must not hold App's borrow while dispatching events.
+    if let Some(alert) = alert {
+        unsafe {
+            let _: isize = msg_send![&*alert, runModal];
+        }
+    }
 }
 extern "C-unwind" fn did_launch(_: *mut AnyObject, _: Sel, _: Obj) {
     with_app(|a| unsafe {
@@ -1283,24 +1402,37 @@ unsafe fn make_menu(app: &AnyObject, target: &AnyObject) {
         let item: Retained<AnyObject> = msg_send![class!(NSMenuItem), new];
         let submenu: Retained<AnyObject> = msg_send![class!(NSMenu), new];
         for (title, selector, key) in [
-            ("Acerca de AMStats…", sel!(about:), ""),
-            ("Buscar actualizaciones…", sel!(checkUpdates:), "u"),
             ("Resumen", sel!(summary:), "r"),
             ("Ajustes…", sel!(settings:), ","),
-            ("Salir de AMStats", sel!(quit:), "q"),
+            ("Buscar actualizaciones…", sel!(checkUpdates:), "u"),
+            ("", sel!(summary:), ""),
         ] {
+            if title.is_empty() {
+                let separator: Obj = msg_send![class!(NSMenuItem), separatorItem];
+                let _: () = msg_send![&*submenu, addItem: separator];
+                continue;
+            }
             let command: Allocated<AnyObject> = msg_send![class!(NSMenuItem), alloc];
             let command: Retained<AnyObject> = msg_send![command, initWithTitle: &*NSString::from_str(title), action: selector, keyEquivalent: &*NSString::from_str(key)];
             let _: () = msg_send![&*command, setTarget: target];
             let _: () = msg_send![&*submenu, addItem: &*command];
         }
-        let separator: Obj = msg_send![class!(NSMenuItem), separatorItem];
-        let _: () = msg_send![&*submenu, addItem: separator];
         for (i, title) in NAMES.iter().enumerate() {
             let command: Allocated<AnyObject> = msg_send![class!(NSMenuItem), alloc];
             let command: Retained<AnyObject> = msg_send![command, initWithTitle: &*NSString::from_str(&format!("Detalle de {title}…")), action: sel!(detailTab:), keyEquivalent: &*NSString::from_str(&(i+1).to_string())];
             let _: () = msg_send![&*command, setTarget: target];
             let _: () = msg_send![&*command, setTag: i as isize];
+            let _: () = msg_send![&*submenu, addItem: &*command];
+        }
+        let separator: Obj = msg_send![class!(NSMenuItem), separatorItem];
+        let _: () = msg_send![&*submenu, addItem: separator];
+        for (title, selector, key) in [
+            ("Acerca de AMStats…", sel!(about:), ""),
+            ("Salir de AMStats", sel!(quit:), "q"),
+        ] {
+            let command: Allocated<AnyObject> = msg_send![class!(NSMenuItem), alloc];
+            let command: Retained<AnyObject> = msg_send![command, initWithTitle: &*NSString::from_str(title), action: selector, keyEquivalent: &*NSString::from_str(key)];
+            let _: () = msg_send![&*command, setTarget: target];
             let _: () = msg_send![&*submenu, addItem: &*command];
         }
         let _: () = msg_send![&*item, setSubmenu: &*submenu];
@@ -1331,6 +1463,7 @@ pub fn run() {
             (sel!(summary:), summary),
             (sel!(settings:), settings),
             (sel!(about:), about),
+            (sel!(updates:), updates),
             (sel!(checkUpdates:), check_updates),
             (sel!(openLink:), open_link),
             (sel!(updatePreference:), update_preference),

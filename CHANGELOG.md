@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 0.4.0 — 2026-11-07
+
+- Ajustes organizados en pestañas General y Actualizaciones, con versión instalada, búsqueda manual y preferencias automáticas en un único lugar.
+- Acceso directo a Buscar actualizaciones desde el detalle de cada recurso y desde Resumen; se mantiene el menú contextual y el atajo ⌘U.
+- Menú agrupado por navegación, detalles e información/salida. Acerca de conserva la información del producto y enlaza a la pestaña de actualizaciones.
+- Navegación coherente entre Ajustes, Resumen y Acerca de: la vista anterior se oculta y la nueva se trae al frente.
+- Botones Separar y A la barra con ayuda contextual, textos de configuración más claros y fila propia de navegación en los paneles para no recortar el estado.
+- La búsqueda de actualizaciones cierra el detalle de origen; los errores modales liberan el estado de la app antes de esperar la respuesta.
+
 ## 0.3.2 — 2026-11-07
 
 - Corrige la apertura de Ajustes desde el menú contextual de cualquier indicador, tanto con clic derecho como con Control-clic.

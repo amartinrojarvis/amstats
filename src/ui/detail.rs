@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 const WIDTH: f64 = 456.;
-const HEIGHT: f64 = 690.;
+const HEIGHT: f64 = 722.;
 
 #[derive(Default)]
 pub(super) struct History {
@@ -125,7 +125,12 @@ impl Panel {
             let view: Allocated<AnyObject> = msg_send![class!(NSView), alloc];
             let view: Retained<AnyObject> =
                 msg_send![view, initWithFrame: rect(0.,0.,WIDTH,HEIGHT)];
-            let root = Retained::as_ptr(&view) as Obj;
+            // Keep the full status line above a separate row of navigation buttons.
+            let body: Allocated<AnyObject> = msg_send![class!(NSView), alloc];
+            let body: Retained<AnyObject> =
+                msg_send![body, initWithFrame: rect(0.,32.,WIDTH,HEIGHT-32.)];
+            let _: () = msg_send![&*view, addSubview: &*body];
+            let root = Retained::as_ptr(&body) as Obj;
             let mut tabs = Vec::new();
             for (i, name) in ["CPU", "RAM", "GPU", "SSD", "Red", "Batería"]
                 .iter()
@@ -154,12 +159,13 @@ impl Panel {
             let pin_button = button(
                 root,
                 rect(339., 608., 94., 28.),
-                "Fijar ↗",
+                "Separar ↗",
                 target,
                 sel!(detailPin:),
                 0,
                 false,
             );
+            let _: () = msg_send![pin_button, setToolTip: &*NSString::from_str("Alternar entre ventana independiente y panel en la barra de menús")];
             let value = label(root, rect(22., 562., 410., 48.), "—", 35., true, false);
             let subtitle = label(
                 root,
@@ -216,6 +222,7 @@ impl Panel {
                 0,
                 false,
             );
+            let _: () = msg_send![pause_button, setToolTip: &*NSString::from_str("Pausar o reanudar las consultas de procesos de este panel")];
             let order: Allocated<AnyObject> = msg_send![class!(NSPopUpButton), alloc];
             let order: Retained<AnyObject> =
                 msg_send![order, initWithFrame: rect(260.,310.,178.,28.), pullsDown: false];
@@ -279,14 +286,24 @@ impl Panel {
             let _: () = msg_send![note, setLineBreakMode: 0isize];
             let status = label(
                 root,
-                rect(24., 16., 270., 25.),
+                rect(24., 16., 408., 25.),
                 "Calculando actividad…",
                 10.,
                 false,
                 true,
             );
+            let footer_root = Retained::as_ptr(&view) as Obj;
             button(
-                root,
+                footer_root,
+                rect(20., 13., 230., 28.),
+                "Buscar actualizaciones…",
+                target,
+                sel!(checkUpdates:),
+                0,
+                false,
+            );
+            button(
+                footer_root,
                 rect(340., 13., 96., 28.),
                 "Ajustes…",
                 target,
@@ -537,7 +554,7 @@ impl App {
                     let _: () = msg_send![&*window, setContentView: &*blank];
                     let controller: Obj = msg_send![&*p.popover, contentViewController];
                     let _: () = msg_send![controller, setView: &*p.view];
-                    string(p.pin_button, sel!(setTitle:), "Fijar ↗");
+                    string(p.pin_button, sel!(setTitle:), "Separar ↗");
                 }
             }
         }
@@ -595,7 +612,7 @@ impl App {
             };
             let sort = 0;
             // Clicking the menu bar always opens its attached popover. A separate
-            // window is only created by the explicit Fijar button.
+            // window is only created by the explicit Separar button.
             self.detach_detail_window();
             let same = self
                 .details
@@ -961,7 +978,7 @@ impl App {
                 let _: () = msg_send![&*window, center];
                 let _: () = msg_send![&*window, makeKeyAndOrderFront: ptr::null::<AnyObject>()];
                 p.window = Some(window);
-                string(p.pin_button, sel!(setTitle:), "Desfijar ↙");
+                string(p.pin_button, sel!(setTitle:), "A la barra ↙");
             } else {
                 let window = p.window.take().unwrap();
                 let _: () = msg_send![&*window, orderOut: ptr::null::<AnyObject>()];
@@ -969,7 +986,7 @@ impl App {
                 let blank: Retained<AnyObject> = msg_send![class!(NSView), new];
                 let _: () = msg_send![&*window, setContentView: &*blank];
                 let _: () = msg_send![controller, setView: &*p.view];
-                string(p.pin_button, sel!(setTitle:), "Fijar ↗");
+                string(p.pin_button, sel!(setTitle:), "Separar ↗");
                 let anchor = anchor.unwrap();
                 let bounds: NSRect = msg_send![anchor, bounds];
                 let _: () = msg_send![&*p.popover, showRelativeToRect: bounds, ofView: anchor, preferredEdge: 1usize];

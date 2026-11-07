@@ -1,9 +1,9 @@
 {
-  "version": "0.3.2",
+  "version": "0.4.0",
   "architecture": "arm64",
   "minimum_macos": "13.0",
-  "executable_bytes": 554528,
-  "sha256": "6c978ed966babb0e73b3b3e06c0b1e08d4d6cfe7a4a0d68815f22499c4ab8103",
+  "executable_bytes": 570944,
+  "sha256": "570e377c99e62acecf35b10321efa0a07cbff39361f0da3c40f0a8e767c03e0d",
   "menu_bar_width_all_indicators_pt": 206,
   "tests_passed": 16,
   "updater": "Sparkle 2.10.1",

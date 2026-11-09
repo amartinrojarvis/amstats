@@ -1,5 +1,11 @@
 # Historial de cambios
 
+## 0.4.1 — 2026-11-09
+
+- Indicadores más estrechos: 185 pt de anchos solicitados con los seis visibles, frente a 206 pt.
+- Batería gráfica sin contorno exterior, con nivel de carga, número integrado sin `%`, rayo al cargar y tiempo estimado encima; si no procede mostrar tiempo, indica AC, CARGA o BAT.
+- Autonomía mediante la estimación de macOS; validación de unidades, estados desconocidos y centinelas de tiempo, sin aumentar la frecuencia de lectura.
+
 ## 0.4.0 — 2026-11-07
 
 - Ajustes organizados en pestañas General y Actualizaciones, con versión instalada, búsqueda manual y preferencias automáticas en un único lugar.

@@ -33,6 +33,7 @@ unsafe extern "C" {
     fn IOObjectRelease(object: u32) -> i32;
     fn IORegistryEntryCreateCFProperty(entry: u32, key: Cf, alloc: Cf, options: u32) -> Cf;
     fn IOPSCopyPowerSourcesInfo() -> Cf;
+    fn IOPSGetTimeRemainingEstimate() -> f64;
     fn IOPSCopyPowerSourcesList(info: Cf) -> Cf;
     fn IOPSGetPowerSourceDescription(info: Cf, source: Cf) -> Cf;
     fn IORegistryEntryCreateIterator(
@@ -299,22 +300,68 @@ impl Power {
             let plugged = equals(field(4), &self.keys[5]);
             let charging = boolean(field(6));
             let full = boolean(field(7));
-            let minutes = if charging {
-                number(field(8))
-            } else if !plugged {
-                number(field(9))
-            } else {
-                None
-            };
+            // powerd marks its aggregate estimate unknown while settling after
+            // wake or a power transition. Do not replace that with stale minutes.
+            let minutes = battery_minutes(
+                plugged,
+                charging,
+                full,
+                if !plugged && !charging {
+                    unsafe { IOPSGetTimeRemainingEstimate() }
+                } else {
+                    -1.
+                },
+                number(field(8)),
+            );
             return Some(Battery {
                 percent,
                 plugged,
                 charging,
                 full,
-                minutes: minutes.filter(|n| *n > 0 && *n < 100_000).map(|n| n as u32),
+                minutes,
             });
         }
         None
+    }
+}
+
+// IOPSGetTimeRemainingEstimate returns seconds, source time-to-full is minutes.
+// 0xffff is the Smart Battery "unknown" sentinel, never a 45-day estimate.
+fn battery_minutes(
+    plugged: bool,
+    charging: bool,
+    full: bool,
+    seconds: f64,
+    to_full: Option<i64>,
+) -> Option<u32> {
+    if full && plugged {
+        return None;
+    }
+    if charging {
+        return to_full.filter(|m| (1..65535).contains(m)).map(|m| m as u32);
+    }
+    if plugged || !seconds.is_finite() || !(0. ..65535. * 60.).contains(&seconds) || seconds == 0. {
+        return None;
+    }
+    Some((seconds / 60.).ceil() as u32)
+}
+
+#[cfg(test)]
+mod power_tests {
+    use super::battery_minutes;
+    #[test]
+    fn remaining_time_handles_units_and_unknown_states() {
+        assert_eq!(battery_minutes(false, false, false, 5460., None), Some(91));
+        assert_eq!(battery_minutes(false, false, false, 61., None), Some(2));
+        for value in [-2., -1., 0., f64::NAN, f64::INFINITY, 65535. * 60.] {
+            assert_eq!(battery_minutes(false, false, false, value, Some(120)), None);
+        }
+        assert_eq!(battery_minutes(true, true, false, -2., Some(90)), Some(90));
+        for value in [None, Some(-1), Some(0), Some(65535), Some(65536)] {
+            assert_eq!(battery_minutes(true, true, false, -2., value), None);
+        }
+        assert_eq!(battery_minutes(true, false, false, 3600., Some(90)), None);
+        assert_eq!(battery_minutes(true, true, true, -2., Some(90)), None);
     }
 }
 

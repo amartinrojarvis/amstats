@@ -2,7 +2,7 @@
 
 Monitor de barra de menús para **macOS 13+ y Apple Silicon**, escrito en Rust con interfaz AppKit. CPU, RAM, GPU, almacenamiento, subida/bajada de red y batería con tiempo estimado de carga o autonomía.
 
-La barra mantiene el formato compacto de dos líneas y un presupuesto de **212 pt**. Cada indicador tiene un botón nativo independiente; sus anchos solicitados suman 206 pt con los seis visibles. Los valores usan cifras de ancho fijo y porcentajes pequeños. Los indicadores ocultos desaparecen también del muestreo. Un clic abre el detalle; desde Ajustes se puede abrir además un resumen en ventana.
+La barra mantiene el formato compacto de dos líneas y un presupuesto de **191 pt**. Cada indicador tiene un botón nativo independiente; sus anchos solicitados suman 185 pt con los seis visibles. Los valores usan cifras de ancho fijo y porcentajes pequeños. Los indicadores ocultos desaparecen también del muestreo. Un clic abre el detalle; desde Ajustes se puede abrir además un resumen en ventana.
 
 ## Abrir e instalar
 
@@ -26,7 +26,7 @@ La compilación genera una app ARM64 con firma local ad hoc. La distribución a 
 
 - **CPU / RAM / GPU / SSD:** porcentaje de utilización. SSD expresa espacio ocupado, no actividad de entrada/salida.
 - **↑ / ↓:** subida en la línea superior y descarga en la inferior. En la barra, `K`, `M` y `G` equivalen a KB/s, MB/s y GB/s decimales. El panel muestra las unidades completas.
-- **Batería:** porcentaje y tiempo disponible; `↗` indica tiempo hasta completar la carga y `↘`, autonomía. `AC` indica alimentación externa. El panel distingue carga completa, carga en pausa y estimación todavía no disponible.
+- **Batería:** silueta con relleno proporcional y porcentaje integrado sin `%`; un rayo indica que está cargando. Encima aparece el tiempo estimado (`45m`, `2h15`): autonomía al descargar o tiempo para completar la carga. Cuando no hay un tiempo estimado, muestra `AC` con alimentación externa (carga completa o en pausa), `CARGA` durante la carga y `BAT` al usar batería. El panel conserva la explicación del estado.
 - **Detalle contextual:** pulsa CPU, RAM, GPU, SSD, red o batería en la barra para abrir ese recurso. En red puedes elegir el orden por subida o descarga desde el selector del panel. Gráficos LED con 60 segundos de historial; subida desde el centro hacia arriba y descarga hacia abajo, con escala compartida.
 - **Procesos:** hasta diez entradas ordenadas de mayor a menor, agrupación por aplicación, desglose de sus procesos, PID y memoria. Puedes elegir el sentido de E/S, pausar y fijar el panel como ventana. «Separar» abre una ventana independiente y «A la barra» recupera el desplegable; al pulsar un indicador se vuelve al desplegable anclado a él. La lista mantiene el orden mientras el cursor está encima.
 - **Cargador:** potencia declarada en W, potencia de carga/descarga de batería, salud estimada, ciclos y capacidad. La potencia del adaptador no es el consumo medido en el enchufe.
@@ -51,7 +51,7 @@ El feed y los ZIP usan HTTPS y firmas Ed25519. La clave privada permanece en el 
 - Los procesos se consultan solo con el detalle visible, como mínimo cada 2 segundos y respetando el intervalo y ahorro configurados. El detalle de red usa un único lector nativo `nettop`, sin DNS, que termina al cambiar de recurso, cerrar o pausar.
 - Matriz LED dibujada con tres trazados, sin animaciones, temporizadores ni vistas por punto. Historial de 60 segundos limitado a 61 muestras en RAM; no se redibuja dos veces la misma muestra.
 - CPU y RAM mediante Mach; GPU y alimentación mediante IOKit; red mediante contadores de 64 bits del kernel; espacio mediante `statfs`.
-- Un solo estado pendiente para la interfaz: las actualizaciones no se acumulan. La barra se redibuja únicamente cuando cambia el texto mostrado.
+- Un solo estado pendiente para la interfaz: las actualizaciones no se acumulan. La barra se redibuja únicamente cuando cambia el contenido mostrado.
 - Los paneles se construyen al abrirlos y solo actualizan sus vistas cuando están visibles.
 - Disco y batería cada 30 segundos; cambios de alimentación también por notificaciones. El modo de ahorro duplica el intervalo al funcionar con batería.
 - Sin muestreo periódico con todos los indicadores apagados. Pausa durante reposo del sistema o de las pantallas; reinicia las bases de CPU/red al despertar para evitar picos falsos.
@@ -65,6 +65,8 @@ Si está activado el ahorro en batería, se consulta alimentación aunque su ind
 CPU se calcula con diferencias entre contadores globales y se normaliza entre 0 y 100 %. RAM incluye memoria comprimida y excluye caché recuperable, siguiendo la interpretación habitual de memoria usada. Los tamaños del panel se expresan en GB decimales.
 
 El disco corresponde al espacio disponible en el volumen de datos APFS. Las instantáneas y el espacio purgable pueden producir diferencias con Finder. La red suma interfaces físicas `en*` activas: evita contar dos veces túneles VPN, loopback y AWDL; no pretende medir tráfico exclusivo entre interfaces virtuales.
+
+La autonomía utiliza `IOPSGetTimeRemainingEstimate` de macOS (segundos convertidos a minutos); el tiempo de carga procede de `Time to Full Charge` de IOKit. Se descartan estados desconocidos, valores no finitos y el centinela `65535`, y no se reutiliza un tiempo de descarga durante la carga o viceversa. Se mantiene la frecuencia de lectura. Son estimaciones del sistema: su exactitud depende del consumo y de la curva de carga; este cambio no garantiza un menor error en minutos frente a una descarga real.
 
 La GPU consulta `PerformanceStatistics` de `IOAccelerator`. Estas propiedades no son un contrato público estable de Apple; si no existen se muestra `—`, con reintento espaciado, en lugar de inventar un 0 %. Se ha comprobado la lectura en el Mac de desarrollo, no en cada generación de Apple Silicon.
 

@@ -149,12 +149,15 @@ struct BarCell {
     bottom: String,
     width: f64,
     network: bool,
+    battery: Option<(u8, bool)>,
 }
 struct Styles {
     header: Retained<AnyObject>,
     value: Retained<AnyObject>,
     network: Retained<AnyObject>,
     percent: Retained<AnyObject>,
+    battery: Retained<AnyObject>,
+    battery_inverse: Retained<AnyObject>,
 }
 unsafe fn text_style(size: f64, weight: f64, secondary: bool) -> Retained<AnyObject> {
     unsafe {
@@ -202,31 +205,33 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
                     (
                         format!("↑ {}", compact_speed(n.up)),
                         format!("↓ {}", compact_speed(n.down)),
-                        42.,
+                        40.,
                     )
                 })
-                .unwrap_or(("↑ —".into(), "↓ —".into(), 42.)),
-            5 => {
-                let top = snapshot
+                .unwrap_or(("↑ —".into(), "↓ —".into(), 40.)),
+            5 => (
+                snapshot
                     .battery
-                    .map(|b| {
-                        if let Some(m) = b.minutes {
-                            let time = if m < 60 {
-                                format!("{m}m")
-                            } else {
-                                format!("{}h{:02}", m / 60, m % 60)
-                            };
-                            format!("{} {time}", if b.charging { "↗" } else { "↘" })
-                        } else if b.plugged {
-                            "BAT · AC".into()
+                    .and_then(|b| b.minutes)
+                    .map(|m| {
+                        if m < 60 {
+                            format!("{m}m")
                         } else {
-                            "BAT".into()
+                            format!("{}h{:02}", m / 60, m % 60)
                         }
                     })
-                    .unwrap_or("BAT".into());
-                (top, value, 44.)
-            }
-            _ => (["CPU", "RAM", "GPU", "SSD"][i].into(), value, 27.),
+                    .unwrap_or_else(|| {
+                        match snapshot.battery {
+                            Some(b) if b.charging => "CARGA",
+                            Some(b) if b.plugged => "AC",
+                            _ => "BAT",
+                        }
+                        .into()
+                    }),
+                String::new(),
+                33.,
+            ),
+            _ => (["CPU", "RAM", "GPU", "SSD"][i].into(), value, 25.),
         };
         cells.push(BarCell {
             metric: Some(i),
@@ -234,6 +239,13 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
             bottom,
             width,
             network: i == 4,
+            battery: (i == 5)
+                .then(|| {
+                    snapshot
+                        .battery
+                        .map(|b| (b.percent.round().clamp(0., 100.) as u8, b.charging))
+                })
+                .flatten(),
         });
     }
     if cells.is_empty() {
@@ -243,6 +255,7 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
             bottom: "·".into(),
             width: 26.,
             network: false,
+            battery: None,
         });
     }
     cells
@@ -265,6 +278,11 @@ extern "C-unwind" fn draw_strip(view: *mut AnyObject, _: Sel, _: NSRect) {
             let mut x = ((bounds.size.width - width) / 2.).floor();
             let y = ((bounds.size.height - 22.) / 2.).floor();
             for cell in cells {
+                if cell.metric == Some(5) {
+                    draw_battery(cell, x, bounds.size.height, &app.styles);
+                    x += cell.width + 2.;
+                    continue;
+                }
                 let top_style = if cell.network { &app.styles.network } else { &app.styles.header };
                 let bottom_style = if cell.network { &app.styles.network } else { &app.styles.value };
                 let top = NSString::from_str(&cell.top); let bottom = NSString::from_str(&cell.bottom);
@@ -284,6 +302,71 @@ extern "C-unwind" fn draw_strip(view: *mut AnyObject, _: Sel, _: NSRect) {
             }
         }
     });
+}
+// Draw in points so AppKit antialiases the same silhouette at every display scale.
+unsafe fn draw_battery(cell: &BarCell, x: f64, height: f64, styles: &Styles) {
+    unsafe {
+        let charging = cell.battery.is_some_and(|(_, charging)| charging);
+        let x = x + if charging { 0. } else { 3. };
+        let y = ((height - 22.) / 2.).floor();
+        let time = NSString::from_str(&cell.top);
+        let _: () = msg_send![&*time, drawInRect: rect(x - if charging { 0. } else { 3. }, y+11.,cell.width,10.), withAttributes: &*styles.header];
+        let foreground: Obj = msg_send![class!(NSColor), labelColor];
+        let terminal_color: Obj = msg_send![foreground, colorWithAlphaComponent: 0.55f64];
+        let _: () = msg_send![terminal_color, set];
+        let terminal: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPathWithRoundedRect: rect(x+25.5,y+5.25,1.5,3.5), xRadius: 0.75f64, yRadius: 0.75f64];
+        let _: () = msg_send![&*terminal, fill];
+        let text = NSString::from_str(
+            &cell
+                .battery
+                .map(|(percent, _)| percent.to_string())
+                .unwrap_or("—".into()),
+        );
+        let text_size: NSSize = msg_send![&*text, sizeWithAttributes: &*styles.battery];
+        let text_rect = rect(
+            x + 1.,
+            y + 3. + (8.5 - text_size.height) / 2.,
+            23.,
+            text_size.height,
+        );
+        let _: () = msg_send![&*text, drawInRect: text_rect, withAttributes: &*styles.battery];
+        if let Some((percent, _)) = cell.battery {
+            let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
+            let interior: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPathWithRoundedRect: rect(x+1.,y+3.25,23.,8.), xRadius: 1.75f64, yRadius: 1.75f64];
+            let _: () = msg_send![&*interior, addClip];
+            let level: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPathWithRect: rect(x+1.,y+3.25,23.*f64::from(percent)/100.,8.)];
+            let _: () = msg_send![foreground, set];
+            let _: () = msg_send![&*level, fill];
+            let _: () = msg_send![&*level, addClip];
+            let _: () =
+                msg_send![&*text, drawInRect: text_rect, withAttributes: &*styles.battery_inverse];
+            let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
+        }
+        if charging {
+            let bolt: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPath];
+            for (i, (px, py)) in [
+                (32.5, 11.5),
+                (28., 7.),
+                (30.5, 7.),
+                (28.5, 3.),
+                (33., 8.5),
+                (30.5, 8.5),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let point = NSPoint::new(x + px, y + py);
+                if i == 0 {
+                    let _: () = msg_send![&*bolt, moveToPoint: point];
+                } else {
+                    let _: () = msg_send![&*bolt, lineToPoint: point];
+                }
+            }
+            let _: () = msg_send![&*bolt, closePath];
+            let _: () = msg_send![foreground, set];
+            let _: () = msg_send![&*bolt, fill];
+        }
+    }
 }
 // Let the native status-bar button receive mouse events and handle highlighting.
 extern "C-unwind" fn strip_hit_test(_: *mut AnyObject, _: Sel, _: NSPoint) -> Obj {
@@ -696,9 +779,16 @@ impl App {
             indicators.reverse();
             let styles = Styles {
                 header: text_style(7., 0.23, true),
-                value: text_style(10.5, 0., false),
-                network: text_style(9., 0., false),
-                percent: text_style(6.5, 0., false),
+                value: text_style(9.5, 0., false),
+                network: text_style(8.5, 0., false),
+                percent: text_style(6., 0., false),
+                battery: text_style(7.5, 0.3, false),
+                battery_inverse: {
+                    let attrs = text_style(7.5, 0.3, false);
+                    let color: Obj = msg_send![class!(NSColor), textBackgroundColor];
+                    let _: () = msg_send![&*attrs, setObject: color, forKey: &*NSString::from_str("NSColor")];
+                    attrs
+                },
             };
             let shared = Arc::new(Shared {
                 snapshot: Mutex::new(Snapshot::default()),
@@ -1529,12 +1619,12 @@ mod tests {
                 ..Default::default()
             };
             let cells = bar_cells(&config, &snapshot);
-            assert_eq!(strip_width(&cells), 212.);
-            assert_eq!(cells.iter().map(indicator_width).sum::<f64>(), 206.);
+            assert_eq!(strip_width(&cells), 191.);
+            assert_eq!(cells.iter().map(indicator_width).sum::<f64>(), 185.);
             for cell in cells {
                 for (text, font_size) in [
-                    (&cell.top, if cell.network { 9. } else { 7. }),
-                    (&cell.bottom, if cell.network { 9. } else { 10.5 }),
+                    (&cell.top, if cell.network { 8.5 } else { 7. }),
+                    (&cell.bottom, if cell.network { 8.5 } else { 9.5 }),
                 ] {
                     let attributes = text_style(font_size, 0., false);
                     let string = NSString::from_str(text);
@@ -1543,7 +1633,7 @@ mod tests {
                         let n = NSString::from_str(number);
                         let p = NSString::from_str("%");
                         let nsize: NSSize = msg_send![&*n, sizeWithAttributes: &*attributes];
-                        let pstyle = text_style(6.5, 0., false);
+                        let pstyle = text_style(6., 0., false);
                         let psize: NSSize = msg_send![&*p, sizeWithAttributes: &*pstyle];
                         size.width = nsize.width + psize.width;
                     }

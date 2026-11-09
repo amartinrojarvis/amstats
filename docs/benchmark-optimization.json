@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-09",
+  "macos": "27.2",
+  "architecture": "arm64",
+  "logical_cores": 8,
+  "interval_seconds": 5,
+  "modules": "all six",
+  "power": "AC, battery full",
+  "battery_saver": true,
+  "method": "scripts/benchmark.py; separate 30-second samples; process CPU, not total machine CPU",
+  "before": "local build with corrected system health/time, before general optimizations; previously opened panels",
+  "after": "optimized local build; fresh launch for settings, then RAM/network panels",
+  "measurements": [
+    {
+      "build": "before",
+      "scenario": "settings",
+      "pid": 16202,
+      "seconds": 30.01,
+      "cpu_percent_one_core": 0.0191,
+      "physical_footprint_mib": 63.16,
+      "rss_mib": 120.55,
+      "idle_wakeups_per_second": 0.033
+    },
+    {
+      "build": "after",
+      "scenario": "settings",
+      "pid": 16645,
+      "seconds": 30.0,
+      "cpu_percent_one_core": 0.0225,
+      "physical_footprint_mib": 31.75,
+      "rss_mib": 98.44,
+      "idle_wakeups_per_second": 0.0
+    },
+    {
+      "build": "before",
+      "scenario": "network detail, AMStats",
+      "pid": 16202,
+      "seconds": 30.01,
+      "cpu_percent_one_core": 0.0301,
+      "physical_footprint_mib": 64.33,
+      "rss_mib": 125.33,
+      "idle_wakeups_per_second": 0.133
+    },
+    {
+      "build": "before",
+      "scenario": "network detail, nettop child",
+      "pid": 16430,
+      "seconds": 30.0,
+      "cpu_percent_one_core": 1.6778,
+      "physical_footprint_mib": 2.52,
+      "rss_mib": 2.72,
+      "idle_wakeups_per_second": 0.0
+    },
+    {
+      "build": "after",
+      "scenario": "network detail, AMStats",
+      "pid": 16645,
+      "seconds": 30.0,
+      "cpu_percent_one_core": 0.0136,
+      "physical_footprint_mib": 64.36,
+      "rss_mib": 129.22,
+      "idle_wakeups_per_second": 0.0
+    },
+    {
+      "build": "after",
+      "scenario": "network detail, nettop child",
+      "pid": 16689,
+      "seconds": 30.01,
+      "cpu_percent_one_core": 3.3991,
+      "physical_footprint_mib": 2.45,
+      "rss_mib": 2.66,
+      "idle_wakeups_per_second": 0.0
+    }
+  ],
+  "limitations": "Live traffic and host activity were not controlled. Before settings sample had warmed panels; after settings sample was a fresh launch. Memory differences do not establish savings. No statistically supported CPU improvement; nettop cost varied strongly. Main-process benchmarks exclude the child, listed separately."
+}

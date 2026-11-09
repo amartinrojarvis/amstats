@@ -1,5 +1,15 @@
 # Historial de cambios
 
+## 0.4.2 — 2026-11-09
+
+- La salud de batería muestra la capacidad máxima informada por macOS, en lugar del cociente de capacidad bruta/diseño. La consulta se realiza bajo demanda y su caché se conserva al cerrar, pausar o cambiar de panel.
+- El tiempo restante usa los minutos de la misma batería interna y la misma instantánea de estado que `pmset`, sin cálculos adicionales ni mezcla con la autonomía global del equipo.
+- Menos trabajo por actualización: formato de valores sin construir detalles descartados, ayudas actualizadas de forma independiente del redibujado y reutilización de iconos y fuentes.
+- Ranking de procesos con selección de los diez primeros antes de ordenar; se mantienen la agrupación, el desglose y los órdenes de E/S.
+- Los lectores GPU y red consultan solo los PID que ya conocen sus fuentes, sin volver a enumerar todos los procesos del Mac.
+- Lectura de nettop por bloques, sin cadenas ni vectores temporales por línea y reutilizando las tablas de contadores. Los procesos auxiliares se siguen cerrando al salir de sus paneles.
+- Revisión general de eficiencia, pruebas de los seis colectores y mediciones documentadas, manteniendo las métricas y frecuencias existentes.
+
 ## 0.4.1 — 2026-11-09
 
 - Indicadores más estrechos: 185 pt de anchos solicitados con los seis visibles, frente a 206 pt.

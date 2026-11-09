@@ -70,7 +70,7 @@ impl Worker {
                 match event {
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Ok(request) => {
-                        if request != active { collector = Collector::default(); }
+                        if request != active { collector.reset(); }
                         active = request;
                         next = Instant::now();
                     }
@@ -204,14 +204,26 @@ struct Collector {
     facts: Vec<(String, String)>,
     facts_at: Option<Instant>,
     blockers: Vec<i32>,
+    battery_health: Option<f64>,
+    battery_health_at: Option<Instant>,
 }
 impl Collector {
+    fn reset(&mut self) {
+        // Sampling baselines and subprocesses end with the panel. The slow health
+        // value remains valid across tabs, pauses and reopening the detail.
+        *self = Self {
+            battery_health: self.battery_health,
+            battery_health_at: self.battery_health_at,
+            ..Self::default()
+        };
+    }
     fn sample(&mut self, request: Request) -> DetailData {
         let now = Instant::now();
         let elapsed = self.at.map(|then| now.duration_since(then).as_secs_f64());
         let mut result = DetailData {
             kind: request.kind,
             ready: elapsed.is_some() || request.kind == 1,
+            rows: Vec::with_capacity(self.previous.len()),
             ..Default::default()
         };
         let mut gpu_rates: HashMap<i32, f64> = HashMap::new();
@@ -265,28 +277,40 @@ impl Collector {
             }
             .into();
         }
-        let count = unsafe { libc::proc_listallpids(ptr::null_mut(), 0) }.max(0) as usize;
-        if self.pids.len() < count + 64 {
-            self.pids.resize(count + 64, 0);
-        }
-        let len = unsafe {
-            libc::proc_listallpids(
-                self.pids.as_mut_ptr().cast(),
-                (self.pids.len() * mem::size_of::<i32>()) as i32,
-            )
-        }
-        .max(0) as usize;
-        let cores = thread::available_parallelism().map_or(1., |n| n.get() as f64);
+        let len = match request.kind {
+            2 | 4 => {
+                // These readers already identify their processes. Avoid a second
+                // enumeration of every PID in the system for a sparse resource.
+                self.pids.clear();
+                if request.kind == 2 {
+                    self.pids.extend(gpu_names.keys().copied());
+                } else {
+                    self.pids.extend(net.keys().copied());
+                }
+                self.pids.len()
+            }
+            _ => {
+                let count = unsafe { libc::proc_listallpids(ptr::null_mut(), 0) }.max(0) as usize;
+                if self.pids.len() < count + 64 {
+                    self.pids.resize(count + 64, 0);
+                }
+                unsafe {
+                    libc::proc_listallpids(
+                        self.pids.as_mut_ptr().cast(),
+                        (self.pids.len() * mem::size_of::<i32>()) as i32,
+                    )
+                }
+                .max(0) as usize
+            }
+        };
+        static CORES: std::sync::LazyLock<f64> = std::sync::LazyLock::new(|| {
+            thread::available_parallelism().map_or(1., |n| n.get() as f64)
+        });
+        let cores = if request.kind == 0 { *CORES } else { 1. };
         let mut current = HashMap::with_capacity(len);
         let mut observed_energy = false;
         for &pid in &self.pids[..len.min(self.pids.len())] {
             if pid <= 0 {
-                continue;
-            }
-            if request.kind == 2 && !self.gpu.values().any(|(owner, _)| *owner == pid) {
-                continue;
-            }
-            if request.kind == 4 && !net.contains_key(&pid) {
                 continue;
             }
             let usage = usage(pid, request.kind == 5);
@@ -407,6 +431,18 @@ impl Collector {
                 }
                 5 => {
                     let b = platform::battery_details();
+                    let health_ttl = if self.battery_health.is_some() {
+                        900
+                    } else {
+                        60
+                    };
+                    if self
+                        .battery_health_at
+                        .is_none_or(|at| now.duration_since(at) >= Duration::from_secs(health_ttl))
+                    {
+                        self.battery_health = platform::system_battery_health();
+                        self.battery_health_at = Some(now);
+                    }
                     self.blockers = platform::sleep_blockers();
                     self.facts = vec![
                         (
@@ -426,8 +462,10 @@ impl Collector {
                                 .unwrap_or("—".into()),
                         ),
                         (
-                            "SALUD · CAPACIDAD ESTIMADA".into(),
-                            b.health.map(|v| format!("{v:.0}%")).unwrap_or("—".into()),
+                            "SALUD · CAPACIDAD MÁXIMA".into(),
+                            self.battery_health
+                                .map(|v| format!("{v:.0}%"))
+                                .unwrap_or("—".into()),
                         ),
                         (
                             "CICLOS · CAPACIDAD".into(),
@@ -567,8 +605,8 @@ impl NetReader {
                 }
             }
         }
-        while let Some(end) = self.buffer.find('\n') {
-            let line: String = self.buffer.drain(..=end).collect();
+        let consumed = self.buffer.rfind('\n').map_or(0, |end| end + 1);
+        for line in self.buffer[..consumed].lines() {
             if line.starts_with(",bytes_in,bytes_out") {
                 if self.frames > 0 {
                     self.rates.clear();
@@ -585,10 +623,11 @@ impl NetReader {
                     }
                     self.ready = self.frames > 1;
                     self.names.retain(|pid, _| self.frame.contains_key(pid));
-                    self.previous = mem::take(&mut self.frame);
+                    mem::swap(&mut self.previous, &mut self.frame);
+                    self.frame.clear();
                 }
                 self.frames += 1;
-            } else if let Some((pid, down, up)) = parse_net_line(&line) {
+            } else if let Some((pid, down, up)) = parse_net_line(line) {
                 self.frame.insert(pid, (down, up));
                 if let Some(owner) = line
                     .trim()
@@ -598,10 +637,13 @@ impl NetReader {
                     .and_then(|v| v.rsplit_once('.'))
                     .map(|v| v.0)
                 {
-                    self.names.insert(pid, owner.to_string());
+                    if self.names.get(&pid).is_none_or(|name| name != owner) {
+                        self.names.insert(pid, owner.to_string());
+                    }
                 }
             }
         }
+        self.buffer.drain(..consumed);
         if self.buffer.len() > 1024 * 1024 {
             self.buffer.clear();
             self.failed = true;
@@ -619,12 +661,11 @@ impl Drop for NetReader {
     }
 }
 fn parse_net_line(line: &str) -> Option<(i32, u64, u64)> {
-    let fields: Vec<&str> = line.trim().trim_end_matches(',').rsplitn(3, ',').collect();
-    if fields.len() != 3 {
-        return None;
-    }
-    let pid = fields[2].rsplit_once('.')?.1.parse::<i32>().ok()?;
-    Some((pid, fields[1].parse().ok()?, fields[0].parse().ok()?))
+    let mut fields = line.trim().trim_end_matches(',').rsplitn(3, ',');
+    let up = fields.next()?.parse().ok()?;
+    let down = fields.next()?.parse().ok()?;
+    let pid = fields.next()?.rsplit_once('.')?.1.parse::<i32>().ok()?;
+    Some((pid, down, up))
 }
 
 #[derive(Clone, Debug)]
@@ -669,8 +710,13 @@ pub fn ranked(rows: &[Process], grouped: bool, expanded: Option<&str>, order: us
         _ => g.primary + g.secondary,
     };
     let mut groups: Vec<_> = groups.into_values().collect();
-    groups.sort_by(|a, b| score(b).total_cmp(&score(a)).then(a.name.cmp(&b.name)));
-    groups.truncate(10);
+    let compare = |a: &Group, b: &Group| score(b).total_cmp(&score(a)).then(a.name.cmp(&b.name));
+    // Select the visible prefix in linear time, then sort only its ten rows.
+    if groups.len() > 10 {
+        groups.select_nth_unstable_by(10, compare);
+        groups.truncate(10);
+    }
+    groups.sort_by(compare);
     groups
 }
 
@@ -712,6 +758,85 @@ pub fn diagnose() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn closing_a_panel_keeps_health_but_clears_sampling_baselines() {
+        let at = Instant::now();
+        let mut collector = Collector {
+            battery_health: Some(97.),
+            battery_health_at: Some(at),
+            at: Some(at),
+            previous: HashMap::from([(
+                42,
+                Counters {
+                    start: 1,
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        collector.reset();
+        assert_eq!(collector.battery_health, Some(97.));
+        assert_eq!(collector.battery_health_at, Some(at));
+        assert!(collector.at.is_none());
+        assert!(collector.previous.is_empty());
+        assert!(collector.network.is_none());
+    }
+    #[test]
+    fn top_ten_matches_complete_ordering_for_every_sort_mode() {
+        let rows: Vec<_> = (1..=300)
+            .map(|pid| Process {
+                identity: Arc::new(Identity {
+                    pid,
+                    start: 1,
+                    name: format!("Process {pid:03}"),
+                    path: String::new(),
+                    app: format!("/Apps/Group{}.app", pid % 37),
+                }),
+                primary: f64::from(pid % 19),
+                secondary: f64::from(pid % 23),
+                memory: None,
+                prevents_sleep: false,
+            })
+            .collect();
+        for grouped in [true, false] {
+            for order in 0..3 {
+                // Independent reference: build each group then fully sort all rows.
+                let mut reference = HashMap::<String, (String, f64, f64)>::new();
+                for row in &rows {
+                    let key = if grouped {
+                        row.identity.app.clone()
+                    } else {
+                        row.identity.pid.to_string()
+                    };
+                    let name = if grouped {
+                        app_name(&row.identity.app)
+                    } else {
+                        row.identity.name.clone()
+                    };
+                    let value = reference.entry(key).or_insert((name, 0., 0.));
+                    value.1 += row.primary;
+                    value.2 += row.secondary;
+                }
+                let score = |primary, secondary| match order {
+                    1 => primary,
+                    2 => secondary,
+                    _ => primary + secondary,
+                };
+                let mut reference: Vec<_> = reference.into_values().collect();
+                reference.sort_by(|a, b| {
+                    score(b.1, b.2)
+                        .total_cmp(&score(a.1, a.2))
+                        .then(a.0.cmp(&b.0))
+                });
+                reference.truncate(10);
+                let actual: Vec<_> = ranked(&rows, grouped, None, order)
+                    .into_iter()
+                    .map(|g| (g.name, g.primary, g.secondary))
+                    .collect();
+                assert_eq!(actual, reference);
+            }
+        }
+    }
     #[test]
     fn counters_reject_resets_and_invalid_time() {
         assert_eq!(rate(10, 9, 2.), None);

@@ -50,7 +50,6 @@ struct App {
     strip: Retained<AnyObject>,
     cells: Vec<BarCell>,
     styles: Styles,
-    last_tooltip: String,
     preview: Obj,
     popover: Option<Retained<AnyObject>>,
     rows: Vec<Row>,
@@ -70,6 +69,7 @@ struct App {
     _power_notification: Option<crate::platform::PowerNotification>,
 }
 struct Indicator {
+    tooltip: String,
     status: Retained<AnyObject>,
     strip: Retained<AnyObject>,
 }
@@ -197,7 +197,6 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
         if !config.enabled[i] {
             continue;
         }
-        let (value, _, _) = row_text(i, snapshot);
         let (top, bottom, width) = match i {
             4 => snapshot
                 .network
@@ -231,7 +230,19 @@ fn bar_cells(config: &Config, snapshot: &Snapshot) -> Vec<BarCell> {
                 String::new(),
                 33.,
             ),
-            _ => (["CPU", "RAM", "GPU", "SSD"][i].into(), value, 25.),
+            _ => {
+                let percent = match i {
+                    0 => snapshot.cpu,
+                    1 => snapshot.memory.map(|m| metrics::percent(m.used, m.total)),
+                    2 => snapshot.gpu,
+                    _ => snapshot.disk.map(|d| metrics::percent(d.used, d.total)),
+                };
+                (
+                    ["CPU", "RAM", "GPU", "SSD"][i].into(),
+                    percent.map(|p| format!("{p:.0}%")).unwrap_or("—".into()),
+                    25.,
+                )
+            }
         };
         cells.push(BarCell {
             metric: Some(i),
@@ -748,6 +759,9 @@ impl App {
                 msg_send![&*status, setAutosaveName: &*NSString::from_str("AMStats.Compact")];
             let _: () = msg_send![&*status, setVisible: true];
             let button: Obj = msg_send![&*status, button];
+            let help = NSString::from_str("AMStats · abrir resumen y ajustes");
+            let _: () = msg_send![button, setToolTip: &*help];
+            let _: () = msg_send![button, setAccessibilityValue: &*help];
             let _: () = msg_send![button, setTag: -1isize];
             let _: () = msg_send![button, setTarget: target_ptr];
             let _: () = msg_send![button, setAction: sel!(toggle:)];
@@ -772,6 +786,7 @@ impl App {
                 let strip = make_strip(rect(0., 0., 29., 22.));
                 let _: () = msg_send![button, addSubview: &*strip];
                 indicators.push(Indicator {
+                    tooltip: String::new(),
                     status: item,
                     strip,
                 });
@@ -807,7 +822,6 @@ impl App {
                 strip,
                 cells: Vec::new(),
                 styles,
-                last_tooltip: String::new(),
                 preview: ptr::null_mut(),
                 popover: None,
                 rows: Vec::new(),
@@ -1106,11 +1120,6 @@ impl App {
                             let _: () = msg_send![&*indicator.strip, setFrame: rect(0.,0.,width,bounds.size.height)];
                         }
                         let _: () = msg_send![&*indicator.strip, setNeedsDisplay: true];
-                        let (value, detail, _) = row_text(i, &snapshot);
-                        let tooltip =
-                            NSString::from_str(&format!("{}: {} · {}", NAMES[i], value, detail));
-                        let _: () = msg_send![button, setToolTip: &*tooltip];
-                        let _: () = msg_send![button, setAccessibilityValue: &*tooltip];
                     }
                 }
                 if width != old_width {
@@ -1128,20 +1137,21 @@ impl App {
                     }
                 }
             }
-            let tooltip = (0..6)
-                .filter(|i| self.config.enabled[*i])
-                .map(|i| {
-                    let (value, detail, _) = row_text(i, &snapshot);
-                    format!("{}: {} · {}", NAMES[i], value, detail)
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            if tooltip != self.last_tooltip {
-                let button: Obj = msg_send![&*self.status, button];
-                let _: () = msg_send![button, setToolTip: &*NSString::from_str(&tooltip)];
-                let _: () =
-                    msg_send![button, setAccessibilityValue: &*NSString::from_str(&tooltip)];
-                self.last_tooltip = tooltip;
+            // Tooltip/accessibility details may change even when the rounded
+            // number or battery silhouette does not. Format each enabled row once.
+            for (i, indicator) in self.indicators.iter_mut().enumerate() {
+                if !self.config.enabled[i] {
+                    continue;
+                }
+                let (value, detail, _) = row_text(i, &snapshot);
+                let tooltip = format!("{}: {} · {}", NAMES[i], value, detail);
+                if tooltip != indicator.tooltip {
+                    let button: Obj = msg_send![&*indicator.status, button];
+                    let text = NSString::from_str(&tooltip);
+                    let _: () = msg_send![button, setToolTip: &*text];
+                    let _: () = msg_send![button, setAccessibilityValue: &*text];
+                    indicator.tooltip = tooltip;
+                }
             }
             if self.popover_shown() {
                 self.refresh_rows(&snapshot);
@@ -1167,8 +1177,8 @@ impl App {
                 } else {
                     ("—".into(), "Indicador desactivado".into(), None)
                 };
-                string(row.value, sel!(setStringValue:), &value);
-                string(row.detail, sel!(setStringValue:), &detail);
+                detail::set_text(row.value, &value);
+                detail::set_text(row.detail, &detail);
                 let _: () = msg_send![row.gauge, setHidden: gauge.is_none()];
                 if let Some(value) = gauge {
                     let _: () = msg_send![row.gauge, setDoubleValue: value];
@@ -1193,7 +1203,7 @@ impl App {
             } else {
                 "Todos los indicadores están en pausa.".into()
             };
-            string(footer_view, sel!(setStringValue:), &footer);
+            detail::set_text(footer_view, &footer);
         }
     }
     unsafe fn observe(&self) {

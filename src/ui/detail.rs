@@ -49,6 +49,7 @@ struct ProcessView {
     value: Obj,
     subtitle: Obj,
     last: String,
+    icon_app: String,
 }
 pub(super) struct Panel {
     // Worker must finish before Cocoa target is released by App.
@@ -98,7 +99,7 @@ unsafe fn tint(kind: usize) -> Obj {
         }
     }
 }
-unsafe fn set_text(view: Obj, text: &str) {
+pub(super) unsafe fn set_text(view: Obj, text: &str) {
     unsafe {
         let previous: Retained<NSString> = msg_send![view, stringValue];
         if previous.to_string() != text {
@@ -276,6 +277,7 @@ impl Panel {
                     value: val,
                     subtitle: sub,
                     last: String::new(),
+                    icon_app: String::new(),
                 });
             }
             let tracking: Allocated<AnyObject> = msg_send![class!(NSTrackingArea), alloc];
@@ -375,6 +377,9 @@ impl Panel {
         unsafe {
             self.kind = kind;
             self.graph_sample = None;
+            let font: Obj = msg_send![class!(NSFont), monospacedDigitSystemFontOfSize: if kind == 4 { 23f64 } else { 35f64 }, weight: 0.23f64];
+            let _: () = msg_send![self.value, setFont: font];
+            let _: () = msg_send![self.value, setTextColor: tint(kind)];
             self.sort = sort;
             self.expanded = None;
             self.hovering = false;
@@ -489,21 +494,25 @@ impl Panel {
                         "Pulsa para ver los procesos y su identidad".into()
                     };
                     let _: () = msg_send![row.button, setToolTip: &*NSString::from_str(&tooltip)];
-                    if !group.app.is_empty() && !self.icons.contains_key(&group.app) {
-                        if self.icons.len() >= 16 {
-                            self.icons.clear();
+                    if row.icon_app != group.app {
+                        if !group.app.is_empty() && !self.icons.contains_key(&group.app) {
+                            if self.icons.len() >= 16 {
+                                self.icons
+                                    .retain(|app, _| self.displayed.iter().any(|g| g.app == *app));
+                            }
+                            let workspace: Obj = msg_send![class!(NSWorkspace), sharedWorkspace];
+                            let icon: Retained<AnyObject> =
+                                msg_send![workspace, iconForFile: &*NSString::from_str(&group.app)];
+                            self.icons.insert(group.app.clone(), icon);
                         }
-                        let workspace: Obj = msg_send![class!(NSWorkspace), sharedWorkspace];
-                        let icon: Retained<AnyObject> =
-                            msg_send![workspace, iconForFile: &*NSString::from_str(&group.app)];
-                        self.icons.insert(group.app.clone(), icon);
+                        let icon = self
+                            .icons
+                            .get(&group.app)
+                            .map(|v| Retained::as_ptr(v) as Obj)
+                            .unwrap_or(ptr::null_mut());
+                        let _: () = msg_send![row.icon, setImage: icon];
+                        row.icon_app.clone_from(&group.app);
                     }
-                    let icon = self
-                        .icons
-                        .get(&group.app)
-                        .map(|v| Retained::as_ptr(v) as Obj)
-                        .unwrap_or(ptr::null_mut());
-                    let _: () = msg_send![row.icon, setImage: icon];
                     row.last = signature;
                 }
             }
@@ -694,9 +703,6 @@ impl App {
                 value
             };
             set_text(panel.value, &value);
-            let font: Obj = msg_send![class!(NSFont), monospacedDigitSystemFontOfSize: if kind == 4 { 23f64 } else { 35f64 }, weight: 0.23f64];
-            let _: () = msg_send![panel.value, setFont: font];
-            let _: () = msg_send![panel.value, setTextColor: tint(kind)];
             set_text(panel.subtitle, &subtitle);
             let mut facts = panel.data.facts.clone();
             match kind {

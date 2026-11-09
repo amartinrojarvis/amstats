@@ -10,6 +10,14 @@ type Cf = *const c_void;
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(value: Cf);
+    fn CFDataCreate(alloc: Cf, bytes: *const u8, length: isize) -> Cf;
+    fn CFPropertyListCreateWithData(
+        alloc: Cf,
+        data: Cf,
+        options: usize,
+        format: *mut isize,
+        error: *mut Cf,
+    ) -> Cf;
     fn CFGetTypeID(value: Cf) -> usize;
     fn CFDictionaryGetTypeID() -> usize;
     fn CFNumberGetTypeID() -> usize;
@@ -33,7 +41,6 @@ unsafe extern "C" {
     fn IOObjectRelease(object: u32) -> i32;
     fn IORegistryEntryCreateCFProperty(entry: u32, key: Cf, alloc: Cf, options: u32) -> Cf;
     fn IOPSCopyPowerSourcesInfo() -> Cf;
-    fn IOPSGetTimeRemainingEstimate() -> f64;
     fn IOPSCopyPowerSourcesList(info: Cf) -> Cf;
     fn IOPSGetPowerSourceDescription(info: Cf, source: Cf) -> Cf;
     fn IORegistryEntryCreateIterator(
@@ -300,19 +307,10 @@ impl Power {
             let plugged = equals(field(4), &self.keys[5]);
             let charging = boolean(field(6));
             let full = boolean(field(7));
-            // powerd marks its aggregate estimate unknown while settling after
-            // wake or a power transition. Do not replace that with stale minutes.
-            let minutes = battery_minutes(
-                plugged,
-                charging,
-                full,
-                if !plugged && !charging {
-                    unsafe { IOPSGetTimeRemainingEstimate() }
-                } else {
-                    -1.
-                },
-                number(field(8)),
-            );
+            // Use one powerd snapshot for state and time, like pmset -g batt.
+            // The aggregate estimate can also include an attached UPS.
+            let minutes =
+                battery_minutes(plugged, charging, full, number(field(9)), number(field(8)));
             return Some(Battery {
                 percent,
                 plugged,
@@ -325,43 +323,58 @@ impl Power {
     }
 }
 
-// IOPSGetTimeRemainingEstimate returns seconds, source time-to-full is minutes.
-// 0xffff is the Smart Battery "unknown" sentinel, never a 45-day estimate.
+// Both per-source time fields are already in minutes. Do not extrapolate or
+// smooth powerd's estimate a second time. 0xffff means unknown, not 45 days.
 fn battery_minutes(
     plugged: bool,
     charging: bool,
     full: bool,
-    seconds: f64,
+    to_empty: Option<i64>,
     to_full: Option<i64>,
 ) -> Option<u32> {
     if full && plugged {
         return None;
     }
-    if charging {
-        return to_full.filter(|m| (1..65535).contains(m)).map(|m| m as u32);
-    }
-    if plugged || !seconds.is_finite() || !(0. ..65535. * 60.).contains(&seconds) || seconds == 0. {
-        return None;
-    }
-    Some((seconds / 60.).ceil() as u32)
+    let minutes = if charging {
+        to_full
+    } else if !plugged {
+        to_empty
+    } else {
+        None
+    };
+    minutes.filter(|m| (1..65535).contains(m)).map(|m| m as u32)
 }
 
 #[cfg(test)]
 mod power_tests {
-    use super::battery_minutes;
+    use super::*;
     #[test]
-    fn remaining_time_handles_units_and_unknown_states() {
-        assert_eq!(battery_minutes(false, false, false, 5460., None), Some(91));
-        assert_eq!(battery_minutes(false, false, false, 61., None), Some(2));
-        for value in [-2., -1., 0., f64::NAN, f64::INFINITY, 65535. * 60.] {
-            assert_eq!(battery_minutes(false, false, false, value, Some(120)), None);
-        }
-        assert_eq!(battery_minutes(true, true, false, -2., Some(90)), Some(90));
+    fn remaining_time_uses_the_matching_system_field_without_conversion() {
+        assert_eq!(
+            battery_minutes(false, false, false, Some(91), Some(60)),
+            Some(91)
+        );
+        assert_eq!(
+            battery_minutes(true, true, false, Some(91), Some(60)),
+            Some(60)
+        );
         for value in [None, Some(-1), Some(0), Some(65535), Some(65536)] {
-            assert_eq!(battery_minutes(true, true, false, -2., value), None);
+            assert_eq!(battery_minutes(false, false, false, value, Some(120)), None);
+            assert_eq!(battery_minutes(true, true, false, Some(120), value), None);
         }
-        assert_eq!(battery_minutes(true, false, false, 3600., Some(90)), None);
-        assert_eq!(battery_minutes(true, true, true, -2., Some(90)), None);
+        assert_eq!(
+            battery_minutes(true, false, false, Some(91), Some(60)),
+            None
+        );
+        assert_eq!(battery_minutes(true, true, true, Some(91), Some(60)), None);
+    }
+    #[test]
+    fn system_health_parses_percentage_without_recomputing_raw_capacity() {
+        assert_eq!(parse_health_percent("97\u{a0}%"), Some(97.));
+        assert_eq!(parse_health_percent("100%"), Some(100.));
+        for value in ["", "—", "NaN%", "101%", "-1%", "97", "0%"] {
+            assert_eq!(parse_health_percent(value), None);
+        }
     }
 }
 
@@ -628,7 +641,6 @@ pub struct BatteryDetails {
     pub battery_watts: Option<f64>,
     pub cycles: Option<u64>,
     pub capacity_mah: Option<u64>,
-    pub health: Option<f64>,
     pub connected: bool,
 }
 pub fn battery_details() -> BatteryDetails {
@@ -643,7 +655,6 @@ pub fn battery_details() -> BatteryDetails {
     let adapter = get(dict, &NSString::from_str("AdapterDetails"));
     let battery = get(dict, &NSString::from_str("BatteryData"));
     let capacity = field_number(battery, "AppleRawMaxCapacity").filter(|v| *v > 0);
-    let design = field_number(battery, "DesignCapacity").filter(|v| *v > 0);
     let volts = field_number(dict, "Voltage").filter(|v| (1000..30000).contains(v));
     let amps = field_number(dict, "InstantAmperage").or_else(|| field_number(dict, "Amperage"));
     BatteryDetails {
@@ -663,10 +674,66 @@ pub fn battery_details() -> BatteryDetails {
             .filter(|v| *v >= 0)
             .map(|v| v as u64),
         capacity_mah: capacity.map(|v| v as u64),
-        health: capacity
-            .zip(design)
-            .map(|(c, d)| (100. * c as f64 / d as f64).clamp(0., 100.)),
     }
+}
+
+// powerd's calibrated health is not the instantaneous raw FCC/design ratio.
+// Read the system report only on the detail worker, and cache it there.
+pub fn system_battery_health() -> Option<f64> {
+    let output = std::process::Command::new("/usr/sbin/system_profiler")
+        .args([
+            "SPPowerDataType",
+            "-xml",
+            "-detailLevel",
+            "mini",
+            "-timeout",
+            "5",
+        ])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let data = OwnedCf::new(unsafe {
+        CFDataCreate(
+            ptr::null(),
+            output.stdout.as_ptr(),
+            output.stdout.len().try_into().ok()?,
+        )
+    })?;
+    let report = OwnedCf::new(unsafe {
+        CFPropertyListCreateWithData(ptr::null(), data.0, 0, ptr::null_mut(), ptr::null_mut())
+    })?;
+    system_health_from_report(report.0)
+}
+fn system_health_from_report(report: Cf) -> Option<f64> {
+    if report.is_null() || unsafe { CFGetTypeID(report) != CFArrayGetTypeID() } {
+        return None;
+    }
+    for i in 0..unsafe { CFArrayGetCount(report) } {
+        let section = unsafe { CFArrayGetValueAtIndex(report, i) };
+        let items = get(section, &NSString::from_str("_items"));
+        if items.is_null() || unsafe { CFGetTypeID(items) != CFArrayGetTypeID() } {
+            continue;
+        }
+        for j in 0..unsafe { CFArrayGetCount(items) } {
+            let item = unsafe { CFArrayGetValueAtIndex(items, j) };
+            let health = get(item, &NSString::from_str("sppower_battery_health_info"));
+            let value = cf_text(get(
+                health,
+                &NSString::from_str("sppower_battery_health_maximum_capacity"),
+            ));
+            if let Some(percent) = value.as_deref().and_then(parse_health_percent) {
+                return Some(percent);
+            }
+        }
+    }
+    None
+}
+fn parse_health_percent(text: &str) -> Option<f64> {
+    let value: f64 = text.trim().strip_suffix('%')?.trim().parse().ok()?;
+    (value.is_finite() && value > 0. && value <= 100.).then_some(value)
 }
 
 pub fn sleep_blockers() -> Vec<i32> {

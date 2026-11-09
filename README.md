@@ -52,9 +52,11 @@ El feed y los ZIP usan HTTPS y firmas Ed25519. La clave privada permanece en el 
 - Matriz LED dibujada con tres trazados, sin animaciones, temporizadores ni vistas por punto. Historial de 60 segundos limitado a 61 muestras en RAM; no se redibuja dos veces la misma muestra.
 - CPU y RAM mediante Mach; GPU y alimentación mediante IOKit; red mediante contadores de 64 bits del kernel; espacio mediante `statfs`.
 - Un solo estado pendiente para la interfaz: las actualizaciones no se acumulan. La barra se redibuja únicamente cuando cambia el contenido mostrado.
-- Los paneles se construyen al abrirlos y solo actualizan sus vistas cuando están visibles.
+- Los paneles se construyen al abrirlos y solo actualizan sus vistas cuando están visibles. Fuentes e iconos se reutilizan; los textos y ayudas solo se asignan cuando cambian.
+- El ranking selecciona los diez primeros antes de ordenar; GPU y red leen los PID que ya identifican sus fuentes. El lector de red procesa líneas prestadas del búfer y reutiliza las tablas de contadores.
 - Disco y batería cada 30 segundos; cambios de alimentación también por notificaciones. El modo de ahorro duplica el intervalo al funcionar con batería.
 - Sin muestreo periódico con todos los indicadores apagados. Pausa durante reposo del sistema o de las pantallas; reinicia las bases de CPU/red al despertar para evitar picos falsos.
+- La salud de batería usa el informe del sistema bajo demanda y conserva el resultado en caché; no lanza procesos mientras solo está visible la barra.
 - Sin historial persistente ni telemetría. Sparkle consulta el feed de GitHub una vez al día si la búsqueda automática está activada, y descarga las actualizaciones cuando corresponde. Contadores, buffers y conexiones a servicios se reutilizan; los recursos nativos se liberan con RAII.
 - El ejecutable de métricas sigue siendo Rust nativo. Desde 0.2.0, la app incluye Sparkle y sus auxiliares de instalación; las cifras de tamaño y memoria de 0.1.0 no representan esta versión.
 
@@ -66,7 +68,9 @@ CPU se calcula con diferencias entre contadores globales y se normaliza entre 0 
 
 El disco corresponde al espacio disponible en el volumen de datos APFS. Las instantáneas y el espacio purgable pueden producir diferencias con Finder. La red suma interfaces físicas `en*` activas: evita contar dos veces túneles VPN, loopback y AWDL; no pretende medir tráfico exclusivo entre interfaces virtuales.
 
-La autonomía utiliza `IOPSGetTimeRemainingEstimate` de macOS (segundos convertidos a minutos); el tiempo de carga procede de `Time to Full Charge` de IOKit. Se descartan estados desconocidos, valores no finitos y el centinela `65535`, y no se reutiliza un tiempo de descarga durante la carga o viceversa. Se mantiene la frecuencia de lectura. Son estimaciones del sistema: su exactitud depende del consumo y de la curva de carga; este cambio no garantiza un menor error en minutos frente a una descarga real.
+La autonomía y el tiempo de carga se leen de `Time to Empty` y `Time to Full Charge` de la misma instantánea IOKit de la batería interna, como hace `pmset -g batt`. Ambos campos ya vienen en minutos: no se extrapolan, suavizan ni convierten desde la estimación global del equipo, que puede incluir un SAI. Se descartan valores desconocidos y el centinela `65535`, y no se reutiliza un tiempo de descarga durante la carga o viceversa. Se mantiene la frecuencia de lectura. Son estimaciones del sistema, sujetas a los cambios de consumo y de la curva de carga.
+
+La salud muestra la capacidad máxima que informa macOS mediante `system_profiler SPPowerDataType`, en lugar de dividir capacidad bruta entre capacidad de diseño. La consulta se ejecuta en el hilo de detalle solo al consultar batería, con caché de 15 minutos que se conserva al cambiar o cerrar paneles (reintento tras 60 segundos si no hay dato). Si el sistema no ofrece el porcentaje se muestra `—`; la capacidad en mAh sigue siendo una lectura física distinta.
 
 La GPU consulta `PerformanceStatistics` de `IOAccelerator`. Estas propiedades no son un contrato público estable de Apple; si no existen se muestra `—`, con reintento espaciado, en lugar de inventar un 0 %. Se ha comprobado la lectura en el Mac de desarrollo, no en cada generación de Apple Silicon.
 

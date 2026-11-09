@@ -1,5 +1,10 @@
 # Historial de cambios
 
+## 0.4.3 — 2026-11-09
+
+- El número de batería se dibuja una sola vez en blanco sobre la barra de nivel, sin la segunda pasada recortada que partía los dígitos contra el fondo.
+- El cuerpo de la batería recupera un borde de 1 pt en el mismo gris apagado que el texto superior, con el relleno de nivel recortado a esa silueta.
+
 ## 0.4.2 — 2026-11-09
 
 - La salud de batería muestra la capacidad máxima informada por macOS, en lugar del cociente de capacidad bruta/diseño. La consulta se realiza bajo demanda y su caché se conserva al cerrar, pausar o cambiar de panel.

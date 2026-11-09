@@ -157,7 +157,6 @@ struct Styles {
     network: Retained<AnyObject>,
     percent: Retained<AnyObject>,
     battery: Retained<AnyObject>,
-    battery_inverse: Retained<AnyObject>,
 }
 unsafe fn text_style(size: f64, weight: f64, secondary: bool) -> Retained<AnyObject> {
     unsafe {
@@ -340,19 +339,19 @@ unsafe fn draw_battery(cell: &BarCell, x: f64, height: f64, styles: &Styles) {
             23.,
             text_size.height,
         );
-        let _: () = msg_send![&*text, drawInRect: text_rect, withAttributes: &*styles.battery];
+        let muted: Obj = msg_send![class!(NSColor), secondaryLabelColor];
+        let _: () = msg_send![&*muted, set];
+        let outline: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPathWithRoundedRect: rect(x+1.,y+3.25,23.,8.), xRadius: 1.75f64, yRadius: 1.75f64];
+        let _: () = msg_send![&*outline, setLineWidth: 1f64];
+        let _: () = msg_send![&*outline, stroke];
         if let Some((percent, _)) = cell.battery {
             let _: () = msg_send![class!(NSGraphicsContext), saveGraphicsState];
-            let interior: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPathWithRoundedRect: rect(x+1.,y+3.25,23.,8.), xRadius: 1.75f64, yRadius: 1.75f64];
-            let _: () = msg_send![&*interior, addClip];
+            let _: () = msg_send![&*outline, addClip];
             let level: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPathWithRect: rect(x+1.,y+3.25,23.*f64::from(percent)/100.,8.)];
-            let _: () = msg_send![foreground, set];
             let _: () = msg_send![&*level, fill];
-            let _: () = msg_send![&*level, addClip];
-            let _: () =
-                msg_send![&*text, drawInRect: text_rect, withAttributes: &*styles.battery_inverse];
             let _: () = msg_send![class!(NSGraphicsContext), restoreGraphicsState];
         }
+        let _: () = msg_send![&*text, drawInRect: text_rect, withAttributes: &*styles.battery];
         if charging {
             let bolt: Retained<AnyObject> = msg_send![class!(NSBezierPath), bezierPath];
             for (i, (px, py)) in [
@@ -798,12 +797,6 @@ impl App {
                 network: text_style(8.5, 0., false),
                 percent: text_style(6., 0., false),
                 battery: text_style(7.5, 0.3, false),
-                battery_inverse: {
-                    let attrs = text_style(7.5, 0.3, false);
-                    let color: Obj = msg_send![class!(NSColor), textBackgroundColor];
-                    let _: () = msg_send![&*attrs, setObject: color, forKey: &*NSString::from_str("NSColor")];
-                    attrs
-                },
             };
             let shared = Arc::new(Shared {
                 snapshot: Mutex::new(Snapshot::default()),
